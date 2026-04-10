@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build
+.next/
+out/
+dist/
+backend/voyagerfi
+
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

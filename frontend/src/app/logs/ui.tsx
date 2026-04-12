@@ -5,130 +5,133 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const DECISION_LOGS = [
+const DECISIONS = [
   {
     id: 1,
-    time: "14:32:06",
-    date: "Apr 12",
-    action: "LONG",
+    time: "Apr 12, 14:32",
+    action: "Long" as const,
     pair: "ETH-PERP",
-    hash: "0x3a7f...c2b1",
-    storageRoot: "0xf4e2...1a9c",
-    txHash: "0x7f2a...3e1b",
     signals: { macro: 72, micro: 51, technical: 84 },
-    reasoning: "Strong bullish momentum confirmed by technical indicators. RSI at 32 indicating oversold, MACD crossover positive. Macro: Fed rate hold reduces risk-off pressure.",
-    action_type: "open",
+    reasoning:
+      "Strong bullish momentum confirmed by technical indicators. RSI at 32 (oversold), MACD crossover positive. Macro: Fed rate hold reduces risk-off pressure on risk assets.",
+    decisionHash: "0x3a7f8b2c...d4e1",
+    storageRoot:  "0xf4e2a91c...3b7f",
+    txHash:       "0x7f2a3e1b...c4d9",
   },
   {
     id: 2,
-    time: "14:27:04",
-    date: "Apr 12",
-    action: "HOLD",
-    pair: "—",
-    hash: "0x8b1c...d4e7",
-    storageRoot: "0xa3c1...7f2e",
-    txHash: null,
+    time: "Apr 12, 14:27",
+    action: "Hold" as const,
+    pair: null,
     signals: { macro: 51, micro: 48, technical: 55 },
-    reasoning: "Mixed signals across all sources. Insufficient conviction to open new position. Monitoring for clearer directional signal.",
-    action_type: "hold",
+    reasoning:
+      "Mixed signals across all sources. Insufficient conviction to open a new position. Monitoring for a clearer directional signal before next cycle.",
+    decisionHash: "0x8b1cd4e7...2a3f",
+    storageRoot:  "0xa3c17f2e...9b1d",
+    txHash:       null,
   },
   {
     id: 3,
-    time: "13:58:22",
-    date: "Apr 12",
-    action: "SHORT",
+    time: "Apr 12, 13:58",
+    action: "Short" as const,
     pair: "BTC-PERP",
-    hash: "0x2d9a...8e3f",
-    storageRoot: "0xb7f3...2d1a",
-    txHash: "0x3c1b...9a4f",
     signals: { macro: 38, micro: 29, technical: 42 },
-    reasoning: "BTC whale movement of 2,400 BTC to exchange wallets — historically bearish signal. Macro sentiment negative following SEC news. Technical: price at upper Bollinger band.",
-    action_type: "open",
+    reasoning:
+      "BTC whale moved 2,400 BTC to exchange wallets — historically a distribution signal. SEC news added negative macro sentiment. Price sitting at upper Bollinger band.",
+    decisionHash: "0x2d9a8e3f...c1b7",
+    storageRoot:  "0xb7f32d1a...e4c8",
+    txHash:       "0x3c1b9a4f...d2e6",
   },
 ];
 
-const ACTION_CONFIG = {
-  LONG:  { className: "bg-[#0f2a1e] text-[#34d399] border-[#064e3b]" },
-  SHORT: { className: "bg-[#2a1515] text-[#f87171] border-[#7f1d1d]" },
-  HOLD:  { className: "bg-[#1a1f2e] text-[#94a3b8] border-[#2d3748]" },
+const ACTION_STYLE = {
+  Long:  { badge: "bg-up-muted text-up border-transparent",      dot: "bg-up"      },
+  Short: { badge: "bg-down-muted text-down border-transparent",   dot: "bg-down"    },
+  Hold:  { badge: "bg-accent text-neutral border-transparent",    dot: "bg-neutral" },
 } as const;
+
+function signalVariant(v: number) {
+  if (v >= 65) return "text-up";
+  if (v <= 40) return "text-down";
+  return "text-neutral";
+}
 
 export function LogsUI() {
   return (
     <AppLayout>
-      <div className="flex flex-col gap-3 max-w-5xl">
+      <div className="flex flex-col gap-5 max-w-4xl">
 
-        {/* Header info */}
-        <div className="flex items-center justify-between">
+        {/* Page header */}
+        <div className="flex items-end justify-between">
           <div>
-            <p className="text-xs text-muted-foreground">
-              Every decision is hashed on-chain via{" "}
-              <span className="text-[#60a5fa]">DecisionLog.sol</span>
-              {" "}and stored in{" "}
-              <span className="text-[#60a5fa]">0G Storage</span>.
+            <h1 className="text-lg font-semibold">Decision Logs</h1>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Every trade decision is hashed on-chain and stored in 0G Storage — fully verifiable.
             </p>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#34d399] animate-pulse" />
-            <span className="text-[10px] text-[#34d399]">Verifiable</span>
+          <div className="flex items-center gap-2 text-sm text-up">
+            <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
+            Verifiable
           </div>
         </div>
 
-        {/* Log entries */}
-        <div className="flex flex-col gap-2">
-          {DECISION_LOGS.map((log) => {
-            const actionCfg = ACTION_CONFIG[log.action as keyof typeof ACTION_CONFIG];
+        {/* Decision cards */}
+        <div className="flex flex-col gap-3">
+          {DECISIONS.map((d) => {
+            const style = ACTION_STYLE[d.action];
             return (
-              <Card key={log.id} className="bg-card border-border rounded-lg">
-                <CardHeader className="p-3 pb-0">
+              <Card key={d.id} className="bg-card border-border">
+                <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={cn("text-[9px] px-2 py-0.5 rounded-full font-medium border", actionCfg.className)}
-                      >
-                        {log.action}
+                    <div className="flex items-center gap-2.5">
+                      <Badge variant="outline" className={cn("text-xs px-2.5 py-0.5", style.badge)}>
+                        {d.action}
                       </Badge>
-                      {log.pair !== "—" && (
-                        <span className="text-xs font-medium text-foreground">{log.pair}</span>
+                      {d.pair && (
+                        <span className="text-sm font-medium">{d.pair}</span>
                       )}
-                      <span className="text-[10px] text-muted-foreground">{log.date} · {log.time}</span>
+                      <span className="text-sm text-muted-foreground">{d.time}</span>
                     </div>
-                    {log.txHash && (
-                      <span className="text-[10px] text-[#60a5fa] font-mono">Tx {log.txHash} ↗</span>
+                    {d.txHash && (
+                      <span className="text-xs text-primary font-mono hover:underline cursor-pointer">
+                        Tx {d.txHash} ↗
+                      </span>
                     )}
                   </div>
                 </CardHeader>
-                <CardContent className="p-3 flex flex-col gap-2.5">
 
-                  {/* Signals mini */}
-                  <div className="flex gap-4">
+                <CardContent className="flex flex-col gap-4 pt-0">
+
+                  {/* Signals inline */}
+                  <div className="flex items-center gap-6">
                     {[
-                      { label: "Macro", value: log.signals.macro, color: log.signals.macro > 60 ? "#34d399" : log.signals.macro > 40 ? "#fbbf24" : "#f87171" },
-                      { label: "Micro", value: log.signals.micro, color: log.signals.micro > 60 ? "#34d399" : log.signals.micro > 40 ? "#fbbf24" : "#f87171" },
-                      { label: "Technical", value: log.signals.technical, color: log.signals.technical > 60 ? "#34d399" : log.signals.technical > 40 ? "#fbbf24" : "#f87171" },
-                    ].map((sig) => (
-                      <div key={sig.label} className="flex items-center gap-1.5">
-                        <span className="text-[10px] text-muted-foreground">{sig.label}</span>
-                        <span className="text-[10px] font-medium" style={{ color: sig.color }}>{sig.value}%</span>
+                      { label: "Macro",     v: d.signals.macro     },
+                      { label: "Micro",     v: d.signals.micro     },
+                      { label: "Technical", v: d.signals.technical },
+                    ].map((s) => (
+                      <div key={s.label} className="flex items-center gap-1.5">
+                        <span className="text-sm text-muted-foreground">{s.label}</span>
+                        <span className={cn("text-sm font-medium tabular-nums", signalVariant(s.v))}>
+                          {s.v}%
+                        </span>
                       </div>
                     ))}
                   </div>
 
                   {/* Reasoning */}
-                  <p className="text-[11px] text-foreground/70 leading-relaxed bg-[#080a0f] rounded px-3 py-2">
-                    {log.reasoning}
+                  <p className="text-sm text-foreground/80 leading-relaxed bg-secondary rounded-lg px-4 py-3">
+                    {d.reasoning}
                   </p>
 
                   {/* On-chain proofs */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-secondary rounded px-3 py-2">
-                      <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">Decision Hash</p>
-                      <p className="text-[10px] font-mono text-[#60a5fa]">{log.hash}</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="rounded-lg bg-secondary px-4 py-3">
+                      <p className="text-xs text-muted-foreground mb-1">Decision Hash</p>
+                      <p className="text-sm font-mono text-primary">{d.decisionHash}</p>
                     </div>
-                    <div className="bg-secondary rounded px-3 py-2">
-                      <p className="text-[9px] uppercase tracking-wide text-muted-foreground mb-1">0G Storage Root</p>
-                      <p className="text-[10px] font-mono text-[#60a5fa]">{log.storageRoot}</p>
+                    <div className="rounded-lg bg-secondary px-4 py-3">
+                      <p className="text-xs text-muted-foreground mb-1">0G Storage Root</p>
+                      <p className="text-sm font-mono text-primary">{d.storageRoot}</p>
                     </div>
                   </div>
 
@@ -137,7 +140,6 @@ export function LogsUI() {
             );
           })}
         </div>
-
       </div>
     </AppLayout>
   );

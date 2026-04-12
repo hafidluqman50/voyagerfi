@@ -4,53 +4,57 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
+const NAV = [
   { label: "Dashboard", href: "/dashboard" },
-  { label: "Vault", href: "/vault" },
-  { label: "Agent", href: "/agent" },
-  { label: "Logs", href: "/logs" },
+  { label: "Vault",     href: "/vault"     },
+  { label: "Agent",     href: "/agent"     },
+  { label: "Logs",      href: "/logs"      },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-[180px] shrink-0 border-r border-border bg-card flex flex-col min-h-screen">
-      <div className="h-12 flex items-center px-4 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-primary" />
-          <span className="text-sm font-medium text-foreground">VoyagerFi</span>
-        </div>
+    <aside className="w-48 shrink-0 flex flex-col border-r border-border bg-card">
+      {/* Logo */}
+      <div className="h-14 flex items-center gap-2.5 px-5 border-b border-border">
+        <div className="w-2 h-2 rounded-full bg-primary" />
+        <span className="font-semibold text-sm tracking-tight">VoyagerFi</span>
       </div>
 
-      <nav className="flex flex-col gap-0.5 p-2 pt-3 flex-1">
-        {NAV_ITEMS.map((item) => {
-          const active = pathname === item.href;
+      {/* Nav */}
+      <nav className="flex-1 flex flex-col gap-0.5 p-3 pt-4">
+        {NAV.map(({ label, href }) => {
+          const active = pathname.startsWith(href);
           return (
             <Link
-              key={item.href}
-              href={item.href}
+              key={href}
+              href={href}
               className={cn(
-                "flex items-center gap-2 px-3 py-2 rounded-md text-xs transition-colors",
+                "flex items-center gap-3 px-3 py-2.5 rounded-md text-sm transition-colors",
                 active
-                  ? "bg-accent text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+                  ? "bg-accent text-foreground font-medium"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
               )}
             >
-              <div
+              <span
                 className={cn(
-                  "w-1.5 h-1.5 rounded-full shrink-0",
+                  "w-1.5 h-1.5 rounded-full transition-colors",
                   active ? "bg-primary" : "bg-border"
                 )}
               />
-              {item.label}
+              {label}
             </Link>
           );
         })}
       </nav>
 
-      <div className="p-3 border-t border-border">
-        <div className="text-[10px] text-muted-foreground">0G Mainnet</div>
+      {/* Network badge */}
+      <div className="p-4 border-t border-border">
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
+          <span className="text-xs text-muted-foreground">0G Mainnet</span>
+        </div>
       </div>
     </aside>
   );

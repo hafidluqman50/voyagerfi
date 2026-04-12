@@ -44,56 +44,69 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* Semantic trading colors exposed as Tailwind utilities */
+  --color-up:      var(--up);
+  --color-down:    var(--down);
+  --color-neutral: var(--neutral);
+  --color-up-muted:   var(--up-muted);
+  --color-down-muted: var(--down-muted);
 }
 
 :root {
-  /* VoyagerFi dark theme — single source of truth */
-  --background:         #0b0d12;
-  --foreground:         #e2e8f0;
-  --card:               #0d0f14;
-  --card-foreground:    #e2e8f0;
-  --popover:            #0d0f14;
-  --popover-foreground: #e2e8f0;
+  /* Base surfaces */
+  --background: #0a0c10;
+  --foreground: #f1f5f9;
+
+  --card:            #0f1117;
+  --card-foreground: #f1f5f9;
+
+  --popover:            #0f1117;
+  --popover-foreground: #f1f5f9;
+
   --primary:            #3b82f6;
   --primary-foreground: #ffffff;
-  --secondary:          #131720;
+
+  --secondary:            #161b27;
   --secondary-foreground: #94a3b8;
-  --muted:              #131720;
-  --muted-foreground:   #475569;
-  --accent:             #1e2230;
-  --accent-foreground:  #e2e8f0;
-  --destructive:        #f87171;
+
+  --muted:            #161b27;
+  --muted-foreground: #64748b;
+
+  --accent:            #1e2535;
+  --accent-foreground: #f1f5f9;
+
+  --destructive:            #ef4444;
   --destructive-foreground: #ffffff;
-  --border:             #1e2230;
-  --input:              #1e2230;
-  --ring:               #3b82f6;
-  --radius:             0.5rem;
 
-  /* semantic colors (used as utilities via CSS vars) */
-  --color-green:  #34d399;
-  --color-red:    #f87171;
-  --color-yellow: #fbbf24;
-  --color-blue:   #3b82f6;
-  --color-sub:    #64748b;
+  --border: #1e2535;
+  --input:  #1e2535;
+  --ring:   #3b82f6;
+  --radius: 0.5rem;
 
-  /* chart */
+  /* Trading semantic colors */
+  --up:      #22c55e;
+  --down:    #ef4444;
+  --neutral: #94a3b8;
+  --up-muted:   #14532d;
+  --down-muted: #450a0a;
+
+  /* Charts */
   --chart-1: #3b82f6;
-  --chart-2: #34d399;
-  --chart-3: #fbbf24;
-  --chart-4: #f87171;
+  --chart-2: #22c55e;
+  --chart-3: #f59e0b;
+  --chart-4: #ef4444;
   --chart-5: #a78bfa;
 
-  /* sidebar */
-  --sidebar:                #0d0f14;
-  --sidebar-foreground:     #e2e8f0;
-  --sidebar-primary:        #3b82f6;
+  /* Sidebar */
+  --sidebar:                    #0f1117;
+  --sidebar-foreground:         #f1f5f9;
+  --sidebar-primary:            #3b82f6;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent:         #1a1f2e;
-  --sidebar-accent-foreground: #e2e8f0;
-  --sidebar-border:         #1e2230;
-  --sidebar-ring:           #3b82f6;
+  --sidebar-accent:             #1e2535;
+  --sidebar-accent-foreground:  #f1f5f9;
+  --sidebar-border:             #1e2535;
+  --sidebar-ring:               #3b82f6;
 }
 
 @layer base {
@@ -101,9 +114,33 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
   }
   html {
     @apply font-sans;
+  }
+}
+
+@layer utilities {
+  .text-up      { color: var(--up); }
+  .text-down    { color: var(--down); }
+  .text-neutral { color: var(--neutral); }
+  .bg-up-muted   { background-color: var(--up-muted); }
+  .bg-down-muted { background-color: var(--down-muted); }
+
+  .live-dot::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--up);
+    margin-right: 6px;
+    animation: pulse-dot 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
   }
 }

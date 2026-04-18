@@ -12,8 +12,9 @@ type AppConfig struct {
 	OGRpcURL        string
 	DeepSeekAPIKey  string
 	DeepSeekURL     string
-	StorageEndpoint string
-	PythContract    string
+	StorageEndpoint   string
+	StorageIndexerURL string
+	PythContract      string
 
 	// Contract addresses
 	VaultAddress         string
@@ -32,8 +33,9 @@ func LoadConfig() *AppConfig {
 		OGRpcURL:        getEnv("OG_RPC_URL", "https://evmrpc.0g.ai"),
 		DeepSeekAPIKey:  getEnv("DEEPSEEK_API_KEY", ""),
 		DeepSeekURL:     getEnv("DEEPSEEK_URL", ""),
-		StorageEndpoint: getEnv("STORAGE_ENDPOINT", ""),
-		PythContract:    getEnv("PYTH_CONTRACT", "0x2880ab155794e7179c9ee2e38200202908c17b43"),
+		StorageEndpoint:   getEnv("STORAGE_ENDPOINT", ""),
+		StorageIndexerURL: getEnv("STORAGE_INDEXER_URL", "https://indexer-storage-turbo.0g.ai"),
+		PythContract:      getEnv("PYTH_CONTRACT", "0x2880ab155794e7179c9ee2e38200202908c17b43"),
 
 		VaultAddress:         getEnv("VAULT_ADDRESS", ""),
 		PerpetualAddress:     getEnv("PERPETUAL_ADDRESS", ""),

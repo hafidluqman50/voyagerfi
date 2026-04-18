@@ -39,3 +39,9 @@ func (r *PositionRepository) FindByTrader(trader string) ([]model.Position, erro
 	err := r.db.Where("trader = ?", trader).Order("created_at DESC").Find(&positions).Error
 	return positions, err
 }
+
+func (r *PositionRepository) FindAllOpen() ([]model.Position, error) {
+	var positions []model.Position
+	err := r.db.Where("is_open = ?", true).Find(&positions).Error
+	return positions, err
+}

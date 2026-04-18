@@ -5,8 +5,8 @@ func calcMA(prices []float64, period int) float64 {
 		return 0
 	}
 	sum := 0.0
-	for _, p := range prices[len(prices)-period:] {
-		sum += p
+	for _, price := range prices[len(prices)-period:] {
+		sum += price
 	}
 	return sum / float64(period)
 }

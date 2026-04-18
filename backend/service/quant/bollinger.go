@@ -7,21 +7,21 @@ func calcBollinger(prices []float64, period int) float64 {
 		return 0
 	}
 
-	ma := calcMA(prices, period)
-	recent := prices[len(prices)-period:]
+	movingAverage := calcMA(prices, period)
+	recentPrices := prices[len(prices)-period:]
 
 	variance := 0.0
-	for _, p := range recent {
-		diff := p - ma
-		variance += diff * diff
+	for _, price := range recentPrices {
+		deviation := price - movingAverage
+		variance += deviation * deviation
 	}
-	stdDev := math.Sqrt(variance / float64(period))
+	standardDeviation := math.Sqrt(variance / float64(period))
 
 	currentPrice := prices[len(prices)-1]
 
 	// Return position relative to bands: -1 (lower band) to +1 (upper band)
-	if stdDev == 0 {
+	if standardDeviation == 0 {
 		return 0
 	}
-	return (currentPrice - ma) / (2 * stdDev)
+	return (currentPrice - movingAverage) / (2 * standardDeviation)
 }

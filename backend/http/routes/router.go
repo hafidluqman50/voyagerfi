@@ -19,13 +19,21 @@ func Setup(repo *repository.Registry, svc *service.Registry) *gin.Engine {
 	handlers.ConfigureVaultHandler(repo.Vault)
 	handlers.ConfigurePositionHandler(repo.Position)
 	handlers.ConfigureDashboardHandler(repo.Decision)
+	handlers.ConfigureDashboardPositionHandler(repo.Position)
+	handlers.ConfigureDecisionHandler(repo.Decision)
 	handlers.ConfigureWSHandler(svc.WebSocket)
+	handlers.ConfigurePricesHandler(svc.Pyth)
+	handlers.ConfigureAgentHandler(svc.AgentLoop)
 
 	// Public routes
 	api := r.Group("/api/v1")
 	{
 		api.GET("/dashboard", handlers.GetDashboard)
+		api.GET("/prices", handlers.GetPrices)
+		api.GET("/agent/status", handlers.GetAgentStatus)
 		api.GET("/ws", handlers.HandleWebSocket)
+		api.GET("/decisions", handlers.GetDecisions)
+		api.GET("/news", handlers.GetNews)
 	}
 
 	// Authenticated routes (wallet-based)

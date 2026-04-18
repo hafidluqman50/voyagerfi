@@ -18,29 +18,29 @@ func NewHub() *Hub {
 	}
 }
 
-func (h *Hub) Register(conn *websocket.Conn) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	h.clients[conn] = true
-	log.Printf("WebSocket client connected (%d total)", len(h.clients))
+func (hub *Hub) Register(connection *websocket.Conn) {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	hub.clients[connection] = true
+	log.Printf("WebSocket client connected (%d total)", len(hub.clients))
 }
 
-func (h *Hub) Unregister(conn *websocket.Conn) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	delete(h.clients, conn)
-	conn.Close()
-	log.Printf("WebSocket client disconnected (%d total)", len(h.clients))
+func (hub *Hub) Unregister(connection *websocket.Conn) {
+	hub.mu.Lock()
+	defer hub.mu.Unlock()
+	delete(hub.clients, connection)
+	connection.Close()
+	log.Printf("WebSocket client disconnected (%d total)", len(hub.clients))
 }
 
-func (h *Hub) Broadcast(message []byte) {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+func (hub *Hub) Broadcast(message []byte) {
+	hub.mu.RLock()
+	defer hub.mu.RUnlock()
 
-	for conn := range h.clients {
-		if err := conn.WriteMessage(websocket.TextMessage, message); err != nil {
+	for connection := range hub.clients {
+		if err := connection.WriteMessage(websocket.TextMessage, message); err != nil {
 			log.Printf("WebSocket write error: %v", err)
-			go h.Unregister(conn)
+			go hub.Unregister(connection)
 		}
 	}
 }

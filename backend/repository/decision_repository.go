@@ -24,6 +24,10 @@ func (r *DecisionRepository) FindLatest(limit int) ([]model.Decision, error) {
 	return decisions, err
 }
 
+func (r *DecisionRepository) Update(decision *model.Decision) error {
+	return r.db.Save(decision).Error
+}
+
 func (r *DecisionRepository) FindByID(id uint) (*model.Decision, error) {
 	var decision model.Decision
 	err := r.db.First(&decision, id).Error

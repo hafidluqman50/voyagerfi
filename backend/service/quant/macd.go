@@ -12,11 +12,11 @@ func calcEMA(prices []float64, period int) float64 {
 	}
 
 	multiplier := 2.0 / float64(period+1)
-	ema := calcMA(prices[:period], period)
+	emaValue := calcMA(prices[:period], period)
 
-	for i := period; i < len(prices); i++ {
-		ema = (prices[i]-ema)*multiplier + ema
+	for index := period; index < len(prices); index++ {
+		emaValue = (prices[index]-emaValue)*multiplier + emaValue
 	}
 
-	return ema
+	return emaValue
 }

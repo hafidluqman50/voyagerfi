@@ -15,12 +15,12 @@ type CombinedSignal struct {
 }
 
 // CombineSignals merges quant and AI signals into a final trading decision
-func CombineSignals(quant *model.Signal, ai *model.Signal) CombinedSignal {
+func CombineSignals(quantSignal *model.Signal, aiSignal *model.Signal) CombinedSignal {
 	// Weight: 40% quant, 60% AI
 	quantWeight := 0.4
 	aiWeight := 0.6
 
-	combinedStrength := quant.Strength*quantWeight + ai.Strength*aiWeight
+	combinedStrength := quantSignal.Strength*quantWeight + aiSignal.Strength*aiWeight
 
 	direction := model.DirectionLong
 	if combinedStrength < 0 {
@@ -28,8 +28,8 @@ func CombineSignals(quant *model.Signal, ai *model.Signal) CombinedSignal {
 	}
 
 	return CombinedSignal{
-		Quant:     quant,
-		AI:        ai,
+		Quant:     quantSignal,
+		AI:        aiSignal,
 		Direction: direction,
 		Strength:  combinedStrength,
 	}

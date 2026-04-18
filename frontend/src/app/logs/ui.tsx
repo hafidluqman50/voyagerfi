@@ -1,145 +1,167 @@
 "use client";
 
 import { AppLayout } from "@/components/layout/app-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useDecisions } from "@/hooks/useDecisions";
+import { useAgentWebSocket } from "@/hooks/useAgentWebSocket";
 import { cn } from "@/lib/utils";
+import type { Decision } from "@/lib/types";
 
-const DECISIONS = [
-  {
-    id: 1,
-    time: "Apr 12, 14:32",
-    action: "Long" as const,
-    pair: "ETH-PERP",
-    signals: { macro: 72, micro: 51, technical: 84 },
-    reasoning:
-      "Strong bullish momentum confirmed by technical indicators. RSI at 32 (oversold), MACD crossover positive. Macro: Fed rate hold reduces risk-off pressure on risk assets.",
-    decisionHash: "0x3a7f8b2c...d4e1",
-    storageRoot:  "0xf4e2a91c...3b7f",
-    txHash:       "0x7f2a3e1b...c4d9",
-  },
-  {
-    id: 2,
-    time: "Apr 12, 14:27",
-    action: "Hold" as const,
-    pair: null,
-    signals: { macro: 51, micro: 48, technical: 55 },
-    reasoning:
-      "Mixed signals across all sources. Insufficient conviction to open a new position. Monitoring for a clearer directional signal before next cycle.",
-    decisionHash: "0x8b1cd4e7...2a3f",
-    storageRoot:  "0xa3c17f2e...9b1d",
-    txHash:       null,
-  },
-  {
-    id: 3,
-    time: "Apr 12, 13:58",
-    action: "Short" as const,
-    pair: "BTC-PERP",
-    signals: { macro: 38, micro: 29, technical: 42 },
-    reasoning:
-      "BTC whale moved 2,400 BTC to exchange wallets — historically a distribution signal. SEC news added negative macro sentiment. Price sitting at upper Bollinger band.",
-    decisionHash: "0x2d9a8e3f...c1b7",
-    storageRoot:  "0xb7f32d1a...e4c8",
-    txHash:       "0x3c1b9a4f...d2e6",
-  },
-];
+function fmtTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return "—";
+  }
+}
 
-const ACTION_STYLE = {
-  Long:  { badge: "bg-up-muted text-up border-transparent",      dot: "bg-up"      },
-  Short: { badge: "bg-down-muted text-down border-transparent",   dot: "bg-down"    },
-  Hold:  { badge: "bg-accent text-neutral border-transparent",    dot: "bg-neutral" },
-} as const;
+function shortHash(h: string): string {
+  if (!h || h.length < 12) return h || "—";
+  return `${h.slice(0, 8)}…${h.slice(-6)}`;
+}
 
-function signalVariant(v: number) {
-  if (v >= 65) return "text-up";
-  if (v <= 40) return "text-down";
-  return "text-neutral";
+function actionLabel(action: string): { label: string; style: string } {
+  switch (action) {
+    case "open_long":  return { label: "Long",  style: "border-positive/30 text-positive bg-positive/5"   };
+    case "open_short": return { label: "Short", style: "border-negative/30 text-negative bg-negative/5"   };
+    case "close":      return { label: "Close", style: "border-primary/30 text-primary bg-primary/5"      };
+    case "hold":
+    default:           return { label: "Hold",  style: "border-border text-muted-foreground"               };
+  }
+}
+
+function DecisionCard({ d }: { d: Decision }) {
+  const { label, style } = actionLabel(d.action);
+  const explorerBase = "https://chainscan.0g.ai/tx/";
+
+  return (
+    <div className="bg-card border border-border rounded-2xl shadow-sm p-5">
+      <div className="flex flex-col gap-4">
+        {/* Header row */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className={cn(
+              "inline-flex items-center text-xs font-medium px-2.5 py-0.5 rounded-md border",
+              style
+            )}>
+              {label}
+            </span>
+            <span className="text-sm text-muted-foreground">{fmtTime(d.created_at)}</span>
+          </div>
+          {d.tx_hash && (
+            <a
+              href={`${explorerBase}${d.tx_hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-mono text-muted-foreground hover:text-primary transition-colors shrink-0"
+            >
+              {shortHash(d.tx_hash)} ↗
+            </a>
+          )}
+        </div>
+
+        {/* Reasoning */}
+        {d.reasoning && (
+          <p className="text-sm text-muted-foreground leading-relaxed">{d.reasoning}</p>
+        )}
+
+        {/* Hash footer */}
+        <div className="flex flex-col sm:flex-row gap-x-8 gap-y-1.5 pt-3 border-t border-border">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest shrink-0">Decision Hash</span>
+            <span className="text-[11px] font-mono text-muted-foreground/70 truncate">
+              {d.decision_hash || "—"}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-widest shrink-0">Storage Root</span>
+            <span className="text-[11px] font-mono text-muted-foreground/70 truncate">
+              {d.storage_root || "—"}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function LogsUI() {
+  const { data: decisions = [], isLoading } = useDecisions(50);
+  const { connected, lastTick } = useAgentWebSocket();
+
   return (
     <AppLayout>
-      <div className="flex flex-col gap-5 max-w-4xl">
+      <div className="flex flex-col gap-5">
 
-        {/* Page header */}
-        <div className="flex items-end justify-between">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
           <div>
-            <h1 className="text-lg font-semibold">Decision Logs</h1>
+            <h2 className="text-lg font-semibold">Decision Logs</h2>
             <p className="text-sm text-muted-foreground mt-0.5">
-              Every trade decision is hashed on-chain and stored in 0G Storage — fully verifiable.
+              Every decision is hashed on-chain and stored on 0G Storage for verification.
             </p>
           </div>
-          <div className="flex items-center gap-2 text-sm text-up">
-            <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
-            Verifiable
+          <div className="flex flex-row sm:flex-col sm:items-end items-center gap-2 sm:gap-1 shrink-0">
+            <div className="flex items-center gap-1.5">
+              <span className={cn(
+                "w-1.5 h-1.5 rounded-full",
+                connected ? "bg-positive animate-pulse-dot" : "bg-muted-foreground"
+              )} />
+              <span className="text-xs text-muted-foreground">
+                {connected ? "Agent live" : "Offline"}
+              </span>
+            </div>
+            {lastTick && (
+              <span className="text-[10px] font-mono text-muted-foreground">
+                Last: {lastTick.action} · strength {(lastTick.strength * 100).toFixed(0)}%
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Decision cards */}
-        <div className="flex flex-col gap-3">
-          {DECISIONS.map((d) => {
-            const style = ACTION_STYLE[d.action];
-            return (
-              <Card key={d.id} className="bg-card border-border">
-                <CardHeader className="pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2.5">
-                      <Badge variant="outline" className={cn("text-xs px-2.5 py-0.5", style.badge)}>
-                        {d.action}
-                      </Badge>
-                      {d.pair && (
-                        <span className="text-sm font-medium">{d.pair}</span>
-                      )}
-                      <span className="text-sm text-muted-foreground">{d.time}</span>
-                    </div>
-                    {d.txHash && (
-                      <span className="text-xs text-primary font-mono hover:underline cursor-pointer">
-                        Tx {d.txHash} ↗
-                      </span>
-                    )}
-                  </div>
-                </CardHeader>
-
-                <CardContent className="flex flex-col gap-4 pt-0">
-
-                  {/* Signals inline */}
-                  <div className="flex items-center gap-6">
-                    {[
-                      { label: "Macro",     v: d.signals.macro     },
-                      { label: "Micro",     v: d.signals.micro     },
-                      { label: "Technical", v: d.signals.technical },
-                    ].map((s) => (
-                      <div key={s.label} className="flex items-center gap-1.5">
-                        <span className="text-sm text-muted-foreground">{s.label}</span>
-                        <span className={cn("text-sm font-medium tabular-nums", signalVariant(s.v))}>
-                          {s.v}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Reasoning */}
-                  <p className="text-sm text-foreground/80 leading-relaxed bg-secondary rounded-lg px-4 py-3">
-                    {d.reasoning}
-                  </p>
-
-                  {/* On-chain proofs */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="rounded-lg bg-secondary px-4 py-3">
-                      <p className="text-xs text-muted-foreground mb-1">Decision Hash</p>
-                      <p className="text-sm font-mono text-primary">{d.decisionHash}</p>
-                    </div>
-                    <div className="rounded-lg bg-secondary px-4 py-3">
-                      <p className="text-xs text-muted-foreground mb-1">0G Storage Root</p>
-                      <p className="text-sm font-mono text-primary">{d.storageRoot}</p>
-                    </div>
-                  </div>
-
-                </CardContent>
-              </Card>
-            );
-          })}
+        {/* Stats */}
+        <div className="grid grid-cols-3 border border-border rounded-2xl overflow-hidden bg-card">
+          <div className="px-5 py-4 border-r border-border">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium mb-1">Total Decisions</p>
+            <p className="text-xl font-semibold">{decisions.length}</p>
+          </div>
+          <div className="px-5 py-4 border-r border-border">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium mb-1">Trades Executed</p>
+            <p className="text-xl font-semibold text-primary">
+              {decisions.filter((d) => d.action !== "hold").length}
+            </p>
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium mb-1">Verified On-chain</p>
+            <p className="text-xl font-semibold text-positive">
+              {decisions.filter((d) => !!d.tx_hash).length}
+            </p>
+          </div>
         </div>
+
+        {/* Decision list */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <p className="text-muted-foreground text-sm animate-pulse">Loading decisions…</p>
+          </div>
+        ) : decisions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-2 bg-card border border-border rounded-2xl">
+            <p className="text-muted-foreground text-sm">No decisions yet</p>
+            <p className="text-xs text-muted-foreground">Agent will log decisions here as it runs</p>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {decisions.map((d) => (
+              <DecisionCard key={d.id} d={d} />
+            ))}
+          </div>
+        )}
+
       </div>
     </AppLayout>
   );

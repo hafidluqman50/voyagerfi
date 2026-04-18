@@ -7,34 +7,34 @@ import (
 	"voyagerfi/service/websocket"
 
 	"github.com/gin-gonic/gin"
-	ws "github.com/gorilla/websocket"
+	gorillaWebsocket "github.com/gorilla/websocket"
 )
 
-var wsHub *websocket.Hub
+var webSocketHub *websocket.Hub
 
 func ConfigureWSHandler(hub *websocket.Hub) {
-	wsHub = hub
+	webSocketHub = hub
 }
 
-var upgrader = ws.Upgrader{
+var connectionUpgrader = gorillaWebsocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
 	},
 }
 
 func HandleWebSocket(c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	connection, err := connectionUpgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
 
-	wsHub.Register(conn)
+	webSocketHub.Register(connection)
 
 	go func() {
-		defer wsHub.Unregister(conn)
+		defer webSocketHub.Unregister(connection)
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			if _, _, err := connection.ReadMessage(); err != nil {
 				break
 			}
 		}

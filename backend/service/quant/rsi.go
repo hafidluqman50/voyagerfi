@@ -24,6 +24,6 @@ func calcRSI(prices []float64, period int) float64 {
 		return 100
 	}
 
-	rs := avgGain / avgLoss
-	return 100 - (100 / (1 + rs))
+	relativeStrength := avgGain / avgLoss
+	return 100 - (100 / (1 + relativeStrength))
 }

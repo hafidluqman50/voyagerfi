@@ -1,294 +1,356 @@
 "use client";
 
+import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { PriceSparkline } from "@/components/charts/price-sparkline";
 import { cn } from "@/lib/utils";
+import { usePrices } from "@/hooks/usePrices";
+import { useAgentStatus } from "@/hooks/useAgentStatus";
+import { useDashboard } from "@/hooks/useDashboard";
+import { useNews } from "@/hooks/useNews";
+import type { NewsArticle, Position } from "@/lib/types";
 
-// ─── Stat Card ────────────────────────────────────────────────────────────────
+/* ── Fallback sparkline seeds (used before Binance klines arrive) ── */
+const ETH_PTS_FALLBACK = [3180, 3210, 3195, 3240, 3225, 3265, 3250, 3290, 3275, 3310, 3295, 3340, 3320, 3349];
+const BTC_PTS_FALLBACK = [66800, 67100, 66900, 67400, 67200, 67500, 67300, 67600, 67100, 66900, 66700, 66500, 66400, 66618];
 
-function StatCard({
+/* ── Helpers ── */
+function fmtPrice(n: number): string {
+  if (n >= 10000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+}
+
+function fmtTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+  } catch {
+    return "--:--";
+  }
+}
+
+function buildTradeRows(positions: Position[]) {
+  return positions.slice(0, 5).map((p) => {
+    const side = p.direction === "long" ? "Buy" : "Sell";
+    const entry = `$${parseFloat(p.entry_price).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+    const pnlStr = p.pnl || (p.is_open ? "—" : "0%");
+    const pos = !pnlStr.startsWith("-");
+    return {
+      pair: "ETH/USD",
+      side,
+      size: `${parseFloat(p.size).toFixed(4)} ETH`,
+      entry,
+      pnl: pnlStr,
+      pnlPct: pnlStr,
+      pos,
+      time: fmtTime(p.created_at),
+      status: p.is_open ? "Open" : "Closed",
+    };
+  });
+}
+
+/* ── Stat bar item ── */
+function StatItem({
   label,
   value,
   sub,
-  valueClassName,
+  positive,
 }: {
   label: string;
   value: string;
   sub?: string;
-  valueClassName?: string;
+  positive?: boolean;
 }) {
   return (
-    <Card className="bg-card border-border">
-      <CardContent className="pt-5 pb-5">
-        <p className="text-xs text-muted-foreground mb-1.5">{label}</p>
-        <p className={cn("text-2xl font-semibold tracking-tight", valueClassName ?? "text-foreground")}>
-          {value}
-        </p>
-        {sub && <p className="text-xs text-muted-foreground mt-1">{sub}</p>}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── Signal Bar ───────────────────────────────────────────────────────────────
-
-function SignalRow({
-  label,
-  value,
-  variant,
-}: {
-  label: string;
-  value: number;
-  variant: "up" | "neutral" | "down";
-}) {
-  const trackColor =
-    variant === "up" ? "bg-up" : variant === "down" ? "bg-down" : "bg-neutral";
-  const textColor =
-    variant === "up" ? "text-up" : variant === "down" ? "text-down" : "text-neutral";
-
-  return (
-    <div className="flex items-center gap-3">
-      <span className="text-sm text-muted-foreground w-20 shrink-0">{label}</span>
-      <div className="flex-1 h-1 bg-border rounded-full overflow-hidden">
-        <div className={cn("h-full rounded-full", trackColor)} style={{ width: `${value}%` }} />
-      </div>
-      <span className={cn("text-sm tabular-nums w-10 text-right shrink-0", textColor)}>
-        {value}%
+    <div className="flex flex-col gap-1 px-5 py-4 border-r border-border last:border-r-0">
+      <span className="text-xs text-muted-foreground uppercase tracking-widest font-medium">
+        {label}
       </span>
+      <span className="text-xl font-semibold font-mono tracking-tight">
+        {value}
+      </span>
+      {sub && (
+        <span
+          className={cn(
+            "text-xs font-mono",
+            positive === true && "text-positive",
+            positive === false && "text-negative",
+            positive === undefined && "text-muted-foreground"
+          )}
+        >
+          {sub}
+        </span>
+      )}
     </div>
   );
 }
 
-// ─── Sparkline ────────────────────────────────────────────────────────────────
-
-function Sparkline({ points, up }: { points: number[]; up: boolean }) {
-  const max = Math.max(...points);
-  const min = Math.min(...points);
-  const range = max - min || 1;
-  const coords = points
-    .map((p, i) => {
-      const x = (i / (points.length - 1)) * 100;
-      const y = 100 - ((p - min) / range) * 100;
-      return `${x},${y}`;
-    })
-    .join(" ");
-
+/* ── Clickable market card ── */
+function MarketCard({
+  href,
+  short,
+  name,
+  pair,
+  iconBg,
+  iconFg,
+  price,
+  symbol,
+  fallback,
+}: {
+  href: string;
+  short: string;
+  name: string;
+  pair: string;
+  iconBg: string;
+  iconFg: string;
+  price: number;
+  symbol: "ETHUSDT" | "BTCUSDT";
+  fallback: number[];
+}) {
   return (
-    <svg viewBox="0 0 100 100" className="w-full h-full" preserveAspectRatio="none">
-      <polyline
-        points={coords}
-        fill="none"
-        stroke={up ? "var(--up)" : "var(--down)"}
-        strokeWidth="2.5"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
+    <Link
+      href={href}
+      className="group bg-card border border-border rounded-2xl overflow-hidden hover:border-primary/40 hover:shadow-sm transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <div className="flex items-center justify-between px-5 pt-4 pb-2">
+        <div className="flex items-center gap-2.5">
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center"
+            style={{ backgroundColor: iconBg }}
+          >
+            <span className="text-[10px] font-bold" style={{ color: iconFg }}>
+              {short}
+            </span>
+          </div>
+          <div>
+            <p className="text-sm font-semibold leading-none">{name}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{pair}</p>
+          </div>
+        </div>
+        <div className="text-right flex items-center gap-2">
+          <div>
+            <p className="text-lg font-semibold font-mono">
+              {price > 0 ? fmtPrice(price) : "—"}
+            </p>
+            <p className="text-xs font-mono mt-0.5 text-muted-foreground">
+              Pyth Oracle · live
+            </p>
+          </div>
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-muted-foreground group-hover:text-primary transition-colors"
+          >
+            <path d="M6 3l5 5-5 5" />
+          </svg>
+        </div>
+      </div>
+      <div className="h-[100px] px-1 pb-3">
+        <PriceSparkline symbol={symbol} fallbackPoints={fallback} />
+      </div>
+    </Link>
   );
 }
 
-// ─── Mock data ────────────────────────────────────────────────────────────────
+function fmtAgo(isoString: string): string {
+  try {
+    const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+    return `${Math.floor(seconds / 86400)}d`;
+  } catch {
+    return "—";
+  }
+}
 
-const TRADES = [
-  { pair: "ETH-PERP", side: "Long",  size: "0.15 ETH", entry: "$3,265", pnl: "+$84.20",  pos: true  },
-  { pair: "BTC-PERP", side: "Short", size: "0.008 BTC", entry: "$67,420", pnl: "+$32.10", pos: true  },
-  { pair: "ETH-PERP", side: "Long",  size: "0.12 ETH", entry: "$3,210", pnl: "−$18.40",  pos: false },
-];
+export function DashboardUI() {
+  const { data: prices } = usePrices();
+  const { data: agentStatus } = useAgentStatus();
+  const { data: dashboard } = useDashboard();
+  const { data: newsArticles = [] } = useNews();
 
-const NEWS = [
-  { title: "Fed signals rate hold, crypto reacts positively",      source: "Reuters",   ago: "2m",  sentiment: "Bullish" as const },
-  { title: "ETH staking yield hits 4.2% amid validator surge",     source: "CoinDesk",  ago: "8m",  sentiment: "Bullish" as const },
-  { title: "SEC delays decision on spot ETH ETF options",           source: "The Block", ago: "15m", sentiment: "Neutral" as const },
-  { title: "BTC whale moves 2,400 BTC to exchange wallets",        source: "Glassnode", ago: "22m", sentiment: "Bearish" as const },
-];
+  const ethPrice = prices?.eth?.price ?? 0;
+  const btcPrice = prices?.btc?.price ?? 0;
 
-const PRICE_POINTS = [42, 45, 41, 47, 44, 50, 46, 53, 49, 55, 51, 58, 54, 61];
+  const isRunning = agentStatus?.running ?? false;
+  const winRate = agentStatus?.win_rate ?? 0;
+  const totalTrades = agentStatus?.total_trades ?? 0;
 
-// ─── Component ────────────────────────────────────────────────────────────────
+  const openPositions = dashboard?.open_positions ?? [];
+  const tradeRows = openPositions.length > 0 ? buildTradeRows(openPositions) : [];
 
-export function DashboardUI({ address }: { address?: string }) {
   return (
     <AppLayout>
-      <div className="flex flex-col gap-5 max-w-7xl">
+      <div className="flex flex-col gap-0 -mt-1">
 
-        {/* Stats row */}
-        <div className="grid grid-cols-4 gap-4">
-          <StatCard label="Portfolio Value"  value="1,300 0G"   sub="≈ $6,266 USD"          />
-          <StatCard label="Total PnL"        value="+97.90 0G"  sub="Since inception" valueClassName="text-up" />
-          <StatCard label="Win Rate"         value="68%"        sub="30 completed trades"   />
-          <StatCard label="Agent Uptime"     value="14h 32m"    sub="Continuous"            />
+        {/* ── Top stat bar ── */}
+        <div className="grid grid-cols-2 md:grid-cols-4 border border-border rounded-2xl overflow-hidden bg-card mb-5">
+          <StatItem label="ETH Price" value={ethPrice > 0 ? fmtPrice(ethPrice) : "—"} sub="live · Pyth Oracle" />
+          <StatItem label="BTC Price" value={btcPrice > 0 ? fmtPrice(btcPrice) : "—"} sub="live · Pyth Oracle" />
+          <StatItem
+            label="Win Rate"
+            value={totalTrades > 0 ? `${(winRate * 100).toFixed(1)}%` : "—"}
+            sub={`${totalTrades} trades`}
+            positive={winRate >= 0.5 ? true : winRate > 0 ? false : undefined}
+          />
+          <div className="flex flex-col gap-1 px-5 py-4">
+            <span className="text-xs text-muted-foreground uppercase tracking-widest font-medium">
+              Agent
+            </span>
+            <div className="flex items-center gap-2">
+              <span className={cn(
+                "w-2 h-2 rounded-full shrink-0",
+                isRunning ? "bg-positive animate-pulse-dot" : "bg-muted-foreground"
+              )} />
+              <span className="text-xl font-semibold">{isRunning ? "Running" : "Offline"}</span>
+            </div>
+            <span className="text-xs text-muted-foreground">
+              {totalTrades > 0
+                ? `${(winRate * 100).toFixed(0)}% win rate · ${totalTrades} trades`
+                : "Warming up…"}
+            </span>
+          </div>
         </div>
 
-        {/* Chart + Agent status */}
-        <div className="grid grid-cols-[1fr_280px] gap-4">
-
-          {/* Chart card */}
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle className="text-base font-semibold">ETH-PERP</CardTitle>
-                  <p className="text-2xl font-bold tracking-tight mt-1">
-                    $3,265 <span className="text-sm font-normal text-up">+3.1%</span>
-                  </p>
-                </div>
-                <div className="flex gap-1.5">
-                  {["1H","4H","1D"].map((t, i) => (
-                    <button
-                      key={t}
-                      className={cn(
-                        "text-xs px-3 py-1.5 rounded-md transition-colors",
-                        i === 0
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                      )}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="h-40 w-full">
-                <Sparkline points={PRICE_POINTS} up />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Agent status card */}
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <Badge variant="outline" className="gap-1.5 border-transparent bg-up-muted text-up px-2.5 py-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-up animate-pulse" />
-                  Running
-                </Badge>
-                <span className="text-xs text-muted-foreground">→ Agent</span>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-4">
-
-              {/* Quick info */}
-              <div className="flex flex-col gap-2">
-                {[
-                  { label: "Last action", value: "Long ETH",  className: "text-up"        },
-                  { label: "Next cycle",  value: "in 3m 12s", className: "text-foreground" },
-                  { label: "TEE",         value: "Verified",  className: "text-up"        },
-                ].map((r) => (
-                  <div key={r.label} className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">{r.label}</span>
-                    <span className={cn("text-sm font-medium", r.className)}>{r.value}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="h-px bg-border" />
-
-              {/* Signal bars */}
-              <div className="flex flex-col gap-2.5">
-                <p className="text-xs text-muted-foreground">Current signals</p>
-                <SignalRow label="Macro"     value={72} variant="up"      />
-                <SignalRow label="Micro"     value={51} variant="neutral" />
-                <SignalRow label="Technical" value={84} variant="up"      />
-              </div>
-
-            </CardContent>
-          </Card>
+        {/* ── Market cards (clickable) ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <MarketCard
+            href="/trade/ETH-USD"
+            short="ETH"
+            name="Ethereum"
+            pair="ETH / USD"
+            iconBg="#ECF0FD"
+            iconFg="#3B5BC4"
+            price={ethPrice}
+            symbol="ETHUSDT"
+            fallback={ETH_PTS_FALLBACK}
+          />
+          <MarketCard
+            href="/trade/BTC-USD"
+            short="BTC"
+            name="Bitcoin"
+            pair="BTC / USD"
+            iconBg="#FDF3E7"
+            iconFg="#C4761A"
+            price={btcPrice}
+            symbol="BTCUSDT"
+            fallback={BTC_PTS_FALLBACK}
+          />
         </div>
 
-        {/* Trades + News */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* ── Trades + News ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
 
-          {/* Recent trades */}
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Recent Trades</CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0 px-0 pb-0">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent border-border">
-                    <TableHead className="text-xs">Pair</TableHead>
-                    <TableHead className="text-xs">Side</TableHead>
-                    <TableHead className="text-xs">Size</TableHead>
-                    <TableHead className="text-xs text-right">PnL</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {TRADES.map((t, i) => (
-                    <TableRow key={i} className="border-border hover:bg-accent/40">
-                      <TableCell className="font-medium text-sm">{t.pair}</TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
+          {/* Trades table */}
+          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+              <span className="text-sm font-semibold">Agent Positions</span>
+              <span className="text-xs text-muted-foreground">
+                {openPositions.length > 0 ? `${openPositions.length} open` : "Live"}
+              </span>
+            </div>
+            {tradeRows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2">
+                <span className="text-muted-foreground text-sm">
+                  {isRunning ? "Agent is warming up — no positions yet" : "Agent offline · no positions"}
+                </span>
+                {isRunning && (
+                  <span className="text-xs text-muted-foreground">
+                    Needs {20} price ticks to start trading
+                  </span>
+                )}
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    {["Pair", "Direction", "Size", "Entry Price", "P&L", "Time"].map((h, i) => (
+                      <th
+                        key={h}
+                        className={cn(
+                          "text-[10px] text-muted-foreground uppercase tracking-widest font-medium px-5 py-2.5 text-left",
+                          i >= 4 && "text-right"
+                        )}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {tradeRows.map((t, i) => (
+                    <tr key={i} className="border-b border-border last:border-b-0 hover:bg-accent/40 transition-colors">
+                      <td className="px-5 py-3 text-sm font-mono font-semibold">{t.pair}</td>
+                      <td className="px-5 py-3">
+                        <span
                           className={cn(
-                            "text-xs border-transparent",
-                            t.side === "Long"
-                              ? "bg-up-muted text-up"
-                              : "bg-down-muted text-down"
+                            "inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md",
+                            t.side === "Buy"
+                              ? "bg-positive/10 text-positive"
+                              : "bg-negative/10 text-negative"
                           )}
                         >
                           {t.side}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">{t.size}</TableCell>
-                      <TableCell className={cn("text-sm text-right font-medium tabular-nums", t.pos ? "text-up" : "text-down")}>
-                        {t.pnl}
-                      </TableCell>
-                    </TableRow>
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-sm font-mono text-muted-foreground">{t.size}</td>
+                      <td className="px-5 py-3 text-sm font-mono text-muted-foreground">{t.entry}</td>
+                      <td className="px-5 py-3 text-right">
+                        <span className={cn("text-sm font-mono font-medium", t.pos ? "text-positive" : "text-negative")}>
+                          {t.pnl}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-right text-xs font-mono text-muted-foreground">{t.time}</td>
+                    </tr>
                   ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+                </tbody>
+              </table>
+            )}
+          </div>
 
           {/* News */}
-          <Card className="bg-card border-border">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold">News Feed</CardTitle>
+          <div className="bg-card border border-border rounded-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-border">
+              <span className="text-sm font-semibold">Market News</span>
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-positive animate-pulse-dot" />
                 <span className="text-xs text-muted-foreground">Live</span>
               </div>
-            </CardHeader>
-            <CardContent className="pt-0 flex flex-col gap-0">
-              {NEWS.map((item, i) => (
-                <div key={i} className="py-3 border-b border-border last:border-0">
-                  <p className="text-sm text-foreground/90 leading-snug mb-2">{item.title}</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{item.source} · {item.ago}</span>
-                    <Badge
-                      variant="outline"
-                      className={cn(
-                        "text-xs border-transparent",
-                        item.sentiment === "Bullish" && "bg-up-muted text-up",
-                        item.sentiment === "Bearish" && "bg-down-muted text-down",
-                        item.sentiment === "Neutral" && "bg-accent text-neutral",
-                      )}
-                    >
-                      {item.sentiment}
-                    </Badge>
-                  </div>
+            </div>
+            <div className="divide-y divide-border">
+              {newsArticles.length === 0 ? (
+                <div className="px-5 py-8 text-center text-sm text-muted-foreground">
+                  Loading news…
                 </div>
-              ))}
-            </CardContent>
-          </Card>
-
+              ) : (
+                newsArticles.map((article: NewsArticle, index: number) => (
+                  <a
+                    key={index}
+                    href={article.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-3 px-5 py-3.5 hover:bg-accent/40 transition-colors block"
+                  >
+                    <div className="w-1 self-stretch rounded-full shrink-0 mt-0.5 bg-border" />
+                    <div className="min-w-0">
+                      <p className="text-sm leading-snug text-foreground line-clamp-2">{article.title}</p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {article.source} · {fmtAgo(article.published_at)} ago
+                      </p>
+                    </div>
+                  </a>
+                ))
+              )}
+            </div>
+          </div>
         </div>
 
-        {!address && (
-          <p className="text-sm text-muted-foreground text-center py-2">
-            Connect your wallet to view live portfolio data
-          </p>
-        )}
       </div>
     </AppLayout>
   );

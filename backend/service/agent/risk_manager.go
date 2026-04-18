@@ -33,22 +33,22 @@ type PositionSizing struct {
 	Reason   string
 }
 
-func (rm *RiskManager) EvaluateEntry(balance float64, signal *model.Signal) PositionSizing {
+func (manager *RiskManager) EvaluateEntry(balance float64, signal *model.Signal) PositionSizing {
 	if balance <= 0 {
 		return PositionSizing{Approved: false, Reason: "no balance"}
 	}
 
 	// Weak signal → skip
-	strength := signal.Strength
-	if strength < 0 {
-		strength = -strength
+	signalStrength := signal.Strength
+	if signalStrength < 0 {
+		signalStrength = -signalStrength
 	}
-	if strength < 0.3 {
+	if signalStrength < 0.3 {
 		return PositionSizing{Approved: false, Reason: "signal too weak"}
 	}
 
-	margin := balance * rm.config.MaxPositionSize * strength
-	leverage := uint(float64(rm.config.MaxLeverage) * strength)
+	margin := balance * manager.config.MaxPositionSize * signalStrength
+	leverage := uint(float64(manager.config.MaxLeverage) * signalStrength)
 	if leverage < 1 {
 		leverage = 1
 	}

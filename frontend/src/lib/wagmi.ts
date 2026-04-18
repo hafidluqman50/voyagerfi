@@ -1,6 +1,5 @@
-import { http } from "wagmi";
-import { type Chain } from "viem";
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { type Chain, mainnet } from "viem/chains";
+import { createConfig, http } from "wagmi";
 
 export const ogChain: Chain = {
   id: 16600,
@@ -23,11 +22,9 @@ export const ogChain: Chain = {
   },
 };
 
-export const wagmiConfig = getDefaultConfig({
-  appName: "VoyagerFi",
-  projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID || "",
+export const wagmiConfig = createConfig({
   chains: [ogChain],
   transports: {
-    [ogChain.id]: http("https://evmrpc.0g.ai"),
+    [ogChain.id]: http()
   },
 });

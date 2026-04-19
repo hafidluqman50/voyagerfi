@@ -39,15 +39,15 @@ type AgentStatus struct {
 }
 
 type Loop struct {
-	repo        *repository.Registry
-	quant       *quant.Engine
-	deepseek    *deepseek.Client
-	pyth        *pyth.Client
-	news        *news.Fetcher
-	riskManager *RiskManager
+	repo         *repository.Registry
+	quant        *quant.Engine
+	deepseek     *deepseek.Client
+	pyth         *pyth.Client
+	news         *news.Fetcher
+	riskManager  *RiskManager
 	webSocketHub *websocketService.Hub
-	interval    time.Duration
-	stopCh      chan struct{}
+	interval     time.Duration
+	stopCh       chan struct{}
 
 	// optional chain bindings (nil = simulation mode)
 	chainClient   *chain.Client
@@ -61,9 +61,9 @@ type Loop struct {
 	storage *storage.Client
 
 	// in-memory state per pair
-	mu           sync.Mutex
-	pairState    map[string]*pairData
-	status       AgentStatus
+	mu        sync.Mutex
+	pairState map[string]*pairData
+	status    AgentStatus
 }
 
 type pairData struct {
@@ -196,16 +196,6 @@ func (loop *Loop) tickPair(symbol, priceID string) {
 	loop.mu.Unlock()
 
 	log.Printf("[%s] $%.2f", symbol, currentPrice)
-
-	// Push price on-chain every 6 ticks (~1 min) to save gas
-	loop.mu.Lock()
-	curTicks := loop.status.TotalTicks
-	loop.mu.Unlock()
-	if symbol == "ETH/USD" && loop.priceFeed != nil && loop.chainClient != nil && curTicks%6 == 0 {
-		if _, err := loop.priceFeed.SetPrice(currentPrice); err != nil {
-			log.Printf("[%s] SetPrice on-chain error: %v", symbol, err)
-		}
-	}
 
 	if len(priceSnapshot) < minPricesRequired {
 		log.Printf("[%s] Warming up (%d/%d)", symbol, len(priceSnapshot), minPricesRequired)
@@ -428,8 +418,8 @@ func (loop *Loop) openPosition(pair string, combinedSignal CombinedSignal, curre
 
 	margin := big.NewInt(10_000_000) // 10 USDC.e default demo margin (6 decimals)
 	if loop.vault != nil && loop.chainClient != nil {
-		if availableBalance, err := loop.vault.GetAvailableBalance(agentAddress); err == nil && availableBalance.Sign() > 0 {
-			margin = new(big.Int).Div(availableBalance, big.NewInt(10))
+		if poolAvail, err := loop.vault.GetPoolAvailable(); err == nil && poolAvail.Sign() > 0 {
+			margin = new(big.Int).Div(poolAvail, big.NewInt(10)) // use 10% of pool per trade
 		}
 	}
 
@@ -446,14 +436,21 @@ func (loop *Loop) openPosition(pair string, combinedSignal CombinedSignal, curre
 
 	var transactionHash string
 	if loop.perpetual != nil && loop.chainClient != nil {
+		// Set price for this pair right before opening — ensures PriceFeed has correct price
+		if loop.priceFeed != nil {
+			if _, err := loop.priceFeed.SetPrice(currentPrice); err != nil {
+				log.Printf("[%s] SetPrice before open error: %v", pair, err)
+			}
+		}
 		var err error
 		transactionHash, err = loop.perpetual.OpenPosition(agentAddress, tradeDirection, margin, leverage)
 		if err != nil {
-			return "", err
+			log.Printf("[%s] On-chain open failed (%v), falling back to sim", pair, err)
+			transactionHash = fmt.Sprintf("sim_%d", time.Now().UnixNano())
 		}
 	} else {
 		transactionHash = fmt.Sprintf("sim_%d", time.Now().UnixNano())
-		log.Printf("Sim open %s margin=%s leverage=%dx", combinedSignal.Direction, margin.String(), positionSizing.Leverage)
+		log.Printf("Sim open %s %s margin=%s leverage=%dx", pair, combinedSignal.Direction, margin.String(), positionSizing.Leverage)
 	}
 
 	positionSize := weiToEtherFloat(margin) * float64(positionSizing.Leverage)
@@ -484,6 +481,12 @@ func (loop *Loop) closePosition(position *model.Position, currentPrice float64) 
 	var transactionHash string
 
 	if loop.perpetual != nil && loop.chainClient != nil {
+		// Set price for this pair right before closing — ensures correct exit price on-chain
+		if loop.priceFeed != nil {
+			if _, err := loop.priceFeed.SetPrice(currentPrice); err != nil {
+				log.Printf("[%s] SetPrice before close error: %v", position.Pair, err)
+			}
+		}
 		positionID := big.NewInt(int64(position.PositionID))
 		var err error
 		transactionHash, err = loop.perpetual.ClosePosition(positionID)

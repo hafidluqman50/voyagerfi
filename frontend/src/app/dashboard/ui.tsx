@@ -5,49 +5,13 @@ import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
 import { PriceSparkline } from "@/components/charts/price-sparkline";
 import { cn } from "@/lib/utils";
+import { fmtPrice, fmtAgo } from "@/lib/format";
+import { ETH_PTS_FALLBACK, BTC_PTS_FALLBACK, buildTradeRows } from "./helpers";
 import { usePrices } from "@/hooks/usePrices";
 import { useAgentStatus } from "@/hooks/useAgentStatus";
 import { useDashboard } from "@/hooks/useDashboard";
 import { useNews } from "@/hooks/useNews";
-import type { NewsArticle, Position } from "@/lib/types";
-
-/* ── Fallback sparkline seeds (used before Binance klines arrive) ── */
-const ETH_PTS_FALLBACK = [3180, 3210, 3195, 3240, 3225, 3265, 3250, 3290, 3275, 3310, 3295, 3340, 3320, 3349];
-const BTC_PTS_FALLBACK = [66800, 67100, 66900, 67400, 67200, 67500, 67300, 67600, 67100, 66900, 66700, 66500, 66400, 66618];
-
-/* ── Helpers ── */
-function fmtPrice(n: number): string {
-  if (n >= 10000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-}
-
-function fmtTime(iso: string): string {
-  try {
-    return new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
-  } catch {
-    return "--:--";
-  }
-}
-
-function buildTradeRows(positions: Position[]) {
-  return positions.slice(0, 5).map((p) => {
-    const side = p.direction === "long" ? "Buy" : "Sell";
-    const entry = `$${parseFloat(p.entry_price).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-    const pnlStr = p.pnl || (p.is_open ? "—" : "0%");
-    const pos = !pnlStr.startsWith("-");
-    return {
-      pair: "ETH/USD",
-      side,
-      size: `${parseFloat(p.size).toFixed(4)} ETH`,
-      entry,
-      pnl: pnlStr,
-      pnlPct: pnlStr,
-      pos,
-      time: fmtTime(p.created_at),
-      status: p.is_open ? "Open" : "Closed",
-    };
-  });
-}
+import type { NewsArticle } from "@/lib/types";
 
 /* ── Stat bar item ── */
 function StatItem({
@@ -156,18 +120,6 @@ function MarketCard({
       </div>
     </Link>
   );
-}
-
-function fmtAgo(isoString: string): string {
-  try {
-    const seconds = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
-    if (seconds < 60) return `${seconds}s`;
-    if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
-    return `${Math.floor(seconds / 86400)}d`;
-  } catch {
-    return "—";
-  }
 }
 
 export function DashboardUI() {

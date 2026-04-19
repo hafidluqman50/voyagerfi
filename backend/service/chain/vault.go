@@ -29,15 +29,12 @@ func (v *VaultBinding) callContract(data []byte) ([]byte, error) {
 	}, nil)
 }
 
-// GetBalance calls vault.balanceOf(user) — returns raw wei balance
-func (v *VaultBinding) GetBalance(user common.Address) (*big.Int, error) {
-	selector := crypto.Keccak256([]byte("balanceOf(address)"))[:4]
-	arg := common.LeftPadBytes(user.Bytes(), 32)
-	data := append(selector, arg...)
-
-	result, err := v.callContract(data)
+// GetPoolAvailable calls vault.poolAvailable() — USDC.e available for trading
+func (v *VaultBinding) GetPoolAvailable() (*big.Int, error) {
+	selector := crypto.Keccak256([]byte("poolAvailable()"))[:4]
+	result, err := v.callContract(selector)
 	if err != nil {
-		return nil, fmt.Errorf("balanceOf call: %w", err)
+		return nil, fmt.Errorf("poolAvailable call: %w", err)
 	}
 	if len(result) == 0 {
 		return big.NewInt(0), nil
@@ -45,15 +42,27 @@ func (v *VaultBinding) GetBalance(user common.Address) (*big.Int, error) {
 	return new(big.Int).SetBytes(result), nil
 }
 
-// GetAvailableBalance calls vault.availableBalance(user) — balance minus locked margin
-func (v *VaultBinding) GetAvailableBalance(user common.Address) (*big.Int, error) {
-	selector := crypto.Keccak256([]byte("availableBalance(address)"))[:4]
+// GetPoolBalance calls vault.poolBalance() — total pool value
+func (v *VaultBinding) GetPoolBalance() (*big.Int, error) {
+	selector := crypto.Keccak256([]byte("poolBalance()"))[:4]
+	result, err := v.callContract(selector)
+	if err != nil {
+		return nil, fmt.Errorf("poolBalance call: %w", err)
+	}
+	if len(result) == 0 {
+		return big.NewInt(0), nil
+	}
+	return new(big.Int).SetBytes(result), nil
+}
+
+// GetUserValue calls vault.userValue(user) — user's proportional USDC.e value
+func (v *VaultBinding) GetUserValue(user common.Address) (*big.Int, error) {
+	selector := crypto.Keccak256([]byte("userValue(address)"))[:4]
 	arg := common.LeftPadBytes(user.Bytes(), 32)
 	data := append(selector, arg...)
-
 	result, err := v.callContract(data)
 	if err != nil {
-		return nil, fmt.Errorf("availableBalance call: %w", err)
+		return nil, fmt.Errorf("userValue call: %w", err)
 	}
 	if len(result) == 0 {
 		return big.NewInt(0), nil

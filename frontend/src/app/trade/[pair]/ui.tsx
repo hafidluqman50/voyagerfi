@@ -8,6 +8,7 @@ import { RealtimeCandleChart, type ChartInterval } from "@/components/charts/pri
 import { useTicker24h } from "@/hooks/useTicker24h";
 import { useFundingRate } from "@/hooks/useFundingRate";
 import { cn } from "@/lib/utils";
+import { fmtPrice, fmtCompact } from "@/lib/format";
 import type { BinanceSymbol } from "@/hooks/useKlines";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -29,21 +30,6 @@ const TIMEFRAMES: { label: string; interval: ChartInterval }[] = [
   { label: "4H",  interval: "4h"  },
   { label: "1D",  interval: "1d"  },
 ];
-
-function fmtPrice(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "—";
-  if (n >= 10_000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  if (n >= 1)      return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
-}
-
-function fmtCompact(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "—";
-  if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(2)}K`;
-  return `$${n.toFixed(2)}`;
-}
 
 function fmtFundingCountdown(nextFundingTime: number): string {
   const now = Date.now();

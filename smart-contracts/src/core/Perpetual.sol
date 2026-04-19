@@ -12,8 +12,8 @@ contract Perpetual is IPerpetual {
     using MathLib for uint256;
 
     uint256 public constant MAX_LEVERAGE = 50;
-    uint256 public constant LIQUIDATION_THRESHOLD = 80; // 80% margin used = liquidatable
-    uint256 public constant FEE_BPS = 10; // 0.1% trading fee
+    uint256 public constant LIQUIDATION_THRESHOLD = 80;
+    uint256 public constant FEE_BPS = 10; // 0.1%
 
     IVault public vault;
     IPriceFeed public priceFeed;
@@ -29,7 +29,8 @@ contract Perpetual is IPerpetual {
     }
 
     modifier onlyAgentOrTrader(uint256 positionId) {
-        if (msg.sender != positions[positionId].trader && !agentRegistry.isAgent(msg.sender)) revert Errors.Unauthorized();
+        if (msg.sender != positions[positionId].trader && !agentRegistry.isAgent(msg.sender))
+            revert Errors.Unauthorized();
         _;
     }
 
@@ -39,6 +40,8 @@ contract Perpetual is IPerpetual {
         agentRegistry = IAgentRegistry(_agentRegistry);
     }
 
+    // Agent opens a position. Margin is locked from the shared pool.
+    // `trader` is recorded for attribution but pool funds are used.
     function openPosition(address trader, Direction direction, uint256 margin, uint256 leverage)
         external
         onlyAgent
@@ -50,7 +53,7 @@ contract Perpetual is IPerpetual {
         uint256 size = MathLib.mulDiv(margin, leverage, 1);
         uint256 fee = MathLib.mulDiv(size, FEE_BPS, 10_000);
 
-        vault.lockMargin(trader, margin + fee);
+        vault.lockPoolMargin(margin + fee);
 
         uint256 positionId = nextPositionId++;
         positions[positionId] = Position({
@@ -78,8 +81,8 @@ contract Perpetual is IPerpetual {
         int256 pnl = _calculatePnL(pos, currentPrice);
 
         pos.isOpen = false;
-        vault.releaseMargin(pos.trader, pos.margin + pos.fee);
-        vault.settleProfit(pos.trader, pnl);
+        vault.releasePoolMargin(pos.margin + pos.fee);
+        vault.settlePoolProfit(pnl);
 
         emit PositionClosed(positionId, currentPrice, pnl);
     }
@@ -91,13 +94,12 @@ contract Perpetual is IPerpetual {
         (uint256 currentPrice,) = priceFeed.getLatestPrice();
         int256 pnl = _calculatePnL(pos, currentPrice);
 
-        // Liquidatable if loss exceeds threshold of margin
         uint256 maxLoss = MathLib.mulDiv(pos.margin, LIQUIDATION_THRESHOLD, 100);
         if (pnl >= 0 || MathLib.abs(pnl) < maxLoss) revert Errors.NotLiquidatable();
 
         pos.isOpen = false;
-        vault.releaseMargin(pos.trader, pos.margin + pos.fee);
-        vault.settleProfit(pos.trader, pnl);
+        vault.releasePoolMargin(pos.margin + pos.fee);
+        vault.settlePoolProfit(pnl);
 
         emit PositionLiquidated(positionId, currentPrice);
     }
@@ -113,7 +115,6 @@ contract Perpetual is IPerpetual {
     function _calculatePnL(Position memory pos, uint256 currentPrice) internal pure returns (int256) {
         int256 priceDelta = int256(currentPrice) - int256(pos.entryPrice);
         if (pos.direction == Direction.Short) priceDelta = -priceDelta;
-
         return (priceDelta * int256(pos.size)) / int256(pos.entryPrice);
     }
 }

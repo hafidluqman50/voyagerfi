@@ -20,6 +20,7 @@ import { useTicker24h } from "@/hooks/useTicker24h";
 import { useVaultBalance } from "@/hooks/useVaultBalance";
 import { VAULT_ADDRESS, VAULT_ABI, USDC_ADDRESS, USDC_ABI } from "@/lib/contracts";
 import { cn } from "@/lib/utils";
+import { fmtPrice } from "@/lib/format";
 
 const USDC_DECIMALS = 6;
 
@@ -35,13 +36,6 @@ const RISK_PROFILES = [
   { id: "balanced",     label: "Balanced",     leverage: 5,  sl: 5,  tp: 10 },
   { id: "aggressive",   label: "Aggressive",   leverage: 10, sl: 8,  tp: 20 },
 ] as const;
-
-function fmtPrice(n: number): string {
-  if (!Number.isFinite(n) || n <= 0) return "—";
-  if (n >= 10000) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-  if (n >= 1) return `$${n.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
-  return `$${n.toLocaleString("en-US", { maximumFractionDigits: 4 })}`;
-}
 
 function fmtUsdc(v: string | null): string {
   if (!v) return "—";

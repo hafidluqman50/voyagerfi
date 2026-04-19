@@ -14,7 +14,22 @@ import (
 const (
 	ETHUSDPriceID = "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace"
 	BTCUSDPriceID = "e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
+	SOLUSDPriceID = "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d"
+	ARBUSDPriceID = "3fa4252848f9f0a1480be62745a4629d9eb1322aebab8a791e344b3b9c1adcf5"
+	BNBUSDPriceID = "2f95862b045670cd22bee3114c39763a4a08beeb663b145d283c31d7d1101c4f"
 )
+
+// Pairs is the canonical list of supported trading pairs
+var Pairs = []struct {
+	Symbol  string
+	PriceID string
+}{
+	{"ETH/USD", ETHUSDPriceID},
+	{"BTC/USD", BTCUSDPriceID},
+	{"SOL/USD", SOLUSDPriceID},
+	{"ARB/USD", ARBUSDPriceID},
+	{"BNB/USD", BNBUSDPriceID},
+}
 
 type Client struct {
 	contract string

@@ -7,7 +7,7 @@ interface IVault {
     event MarginLocked(address indexed user, uint256 amount);
     event MarginReleased(address indexed user, uint256 amount);
 
-    function deposit() external payable;
+    function deposit(uint256 amount) external;
     function withdraw(uint256 amount) external;
     function balanceOf(address user) external view returns (uint256);
     function availableBalance(address user) external view returns (uint256);

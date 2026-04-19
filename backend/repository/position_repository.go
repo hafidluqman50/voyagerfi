@@ -40,8 +40,24 @@ func (r *PositionRepository) FindByTrader(trader string) ([]model.Position, erro
 	return positions, err
 }
 
+func (r *PositionRepository) FindOpenByPair(pair string) ([]model.Position, error) {
+	var positions []model.Position
+	err := r.db.Where("is_open = ? AND pair = ?", true, pair).Find(&positions).Error
+	return positions, err
+}
+
 func (r *PositionRepository) FindAllOpen() ([]model.Position, error) {
 	var positions []model.Position
 	err := r.db.Where("is_open = ?", true).Find(&positions).Error
 	return positions, err
+}
+
+func (r *PositionRepository) FindAll() ([]model.Position, error) {
+	var positions []model.Position
+	err := r.db.Order("created_at DESC").Find(&positions).Error
+	return positions, err
+}
+
+func (r *PositionRepository) DB() *gorm.DB {
+	return r.db
 }

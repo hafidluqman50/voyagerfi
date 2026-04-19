@@ -15,4 +15,5 @@ library Errors {
     error AgentAlreadyRegistered();
     error AgentNotRegistered();
     error MaxAgentsReached();
+    error TransferFailed();
 }

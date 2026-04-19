@@ -13,10 +13,6 @@ import (
 	"github.com/0gfoundation/0g-storage-client/transfer"
 )
 
-const (
-	MainnetIndexerURL = "https://indexer-storage-turbo.0g.ai"
-)
-
 // Client wraps 0G Storage SDK for uploading trade logs
 type Client struct {
 	evmRPC     string
@@ -25,11 +21,7 @@ type Client struct {
 }
 
 func NewClient(endpoint string) *Client {
-	indexerURL := endpoint
-	if indexerURL == "" {
-		indexerURL = MainnetIndexerURL
-	}
-	return &Client{indexerURL: indexerURL}
+	return &Client{indexerURL: endpoint}
 }
 
 // SetCredentials configures the wallet for signing storage transactions
@@ -40,8 +32,7 @@ func (c *Client) SetCredentials(evmRPC, privateKey string) {
 
 // Upload stores data to 0G Storage and returns the Merkle root hash
 func (c *Client) Upload(data []byte, metadata string) (string, error) {
-	if c.privateKey == "" {
-		log.Printf("0G Storage: no private key set, skipping upload (%s, %d bytes)", metadata, len(data))
+	if c.privateKey == "" || c.indexerURL == "" {
 		return "", nil
 	}
 

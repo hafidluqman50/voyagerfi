@@ -2,22 +2,23 @@
 pragma solidity ^0.8.24;
 
 import {IDecisionLog} from "../interfaces/IDecisionLog.sol";
+import {IAgentRegistry} from "../interfaces/IAgentRegistry.sol";
+import {Errors} from "../libraries/Errors.sol";
+
 /// @notice Stores decision hashes on-chain for verifiable sealed inference
 /// Each trade decision: signal input + LLM reasoning + decision = hash
 contract DecisionLog is IDecisionLog {
-    address public agentRegistry;
+    IAgentRegistry public agentRegistry;
 
     Decision[] public decisions;
 
     modifier onlyAgent() {
-        (bool success, bytes memory data) =
-            agentRegistry.staticcall(abi.encodeWithSignature("isAgent(address)", msg.sender));
-        require(success && abi.decode(data, (bool)), "Not authorized agent");
+        if (!agentRegistry.isAgent(msg.sender)) revert Errors.Unauthorized();
         _;
     }
 
     constructor(address _agentRegistry) {
-        agentRegistry = _agentRegistry;
+        agentRegistry = IAgentRegistry(_agentRegistry);
     }
 
     function logDecision(bytes32 decisionHash) external onlyAgent {

@@ -4,9 +4,15 @@ pragma solidity ^0.8.24;
 import {IVault} from "../interfaces/IVault.sol";
 import {Errors} from "../libraries/Errors.sol";
 
+interface IERC20 {
+    function transferFrom(address from, address to, uint256 amount) external returns (bool);
+    function transfer(address to, uint256 amount) external returns (bool);
+}
+
 contract Vault is IVault {
     address public owner;
     address public perpetual;
+    IERC20 public usdc;
 
     mapping(address => uint256) private balances;
     mapping(address => uint256) private lockedMargin;
@@ -21,8 +27,9 @@ contract Vault is IVault {
         _;
     }
 
-    constructor() {
+    constructor(address _usdc) {
         owner = msg.sender;
+        usdc = IERC20(_usdc);
     }
 
     function setPerpetual(address _perpetual) external onlyOwner {
@@ -30,19 +37,18 @@ contract Vault is IVault {
         perpetual = _perpetual;
     }
 
-    function deposit() external payable {
-        if (msg.value == 0) revert Errors.ZeroAmount();
-        balances[msg.sender] += msg.value;
-        emit Deposited(msg.sender, msg.value);
+    function deposit(uint256 amount) external {
+        if (amount == 0) revert Errors.ZeroAmount();
+        if (!usdc.transferFrom(msg.sender, address(this), amount)) revert Errors.TransferFailed();
+        balances[msg.sender] += amount;
+        emit Deposited(msg.sender, amount);
     }
 
     function withdraw(uint256 amount) external {
         if (amount == 0) revert Errors.ZeroAmount();
         if (availableBalance(msg.sender) < amount) revert Errors.InsufficientBalance();
-
         balances[msg.sender] -= amount;
-        (bool success,) = msg.sender.call{value: amount}("");
-        require(success, "Transfer failed");
+        if (!usdc.transfer(msg.sender, amount)) revert Errors.TransferFailed();
         emit Withdrawn(msg.sender, amount);
     }
 

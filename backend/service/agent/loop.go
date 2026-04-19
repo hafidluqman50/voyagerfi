@@ -53,17 +53,22 @@ type Loop struct {
 	chainClient   *chain.Client
 	vault         *chain.VaultBinding
 	perpetual     *chain.PerpetualBinding
+	priceFeed     *chain.PriceFeedBinding
 	decisionLog   *chain.DecisionLogBinding
 	storageAnchor *chain.StorageAnchorBinding
 
 	// optional 0G Storage client
 	storage *storage.Client
 
-	// in-memory state
+	// in-memory state per pair
 	mu           sync.Mutex
+	pairState    map[string]*pairData
+	status       AgentStatus
+}
+
+type pairData struct {
 	priceHistory []float64
 	prevPrice    float64
-	status       AgentStatus
 }
 
 func NewLoop(
@@ -75,17 +80,24 @@ func NewLoop(
 	riskManager *RiskManager,
 	interval time.Duration,
 ) *Loop {
+	pairState := make(map[string]*pairData)
+	for _, p := range pyth.Pairs {
+		pairState[p.Symbol] = &pairData{
+			priceHistory: make([]float64, 0, maxPriceHistory),
+		}
+	}
+
 	return &Loop{
-		repo:         repo,
-		quant:        quantEngine,
-		deepseek:     deepseekClient,
-		pyth:         pythClient,
-		news:         newsFetcher,
-		riskManager:  riskManager,
-		interval:     interval,
-		stopCh:       make(chan struct{}),
-		priceHistory: make([]float64, 0, maxPriceHistory),
-		status:       AgentStatus{Running: false},
+		repo:        repo,
+		quant:       quantEngine,
+		deepseek:    deepseekClient,
+		pyth:        pythClient,
+		news:        newsFetcher,
+		riskManager: riskManager,
+		interval:    interval,
+		stopCh:      make(chan struct{}),
+		pairState:   pairState,
+		status:      AgentStatus{Running: false},
 	}
 }
 
@@ -94,12 +106,14 @@ func (loop *Loop) SetChainBindings(
 	client *chain.Client,
 	vault *chain.VaultBinding,
 	perpetual *chain.PerpetualBinding,
+	priceFeed *chain.PriceFeedBinding,
 	decisionLog *chain.DecisionLogBinding,
 	storageAnchor *chain.StorageAnchorBinding,
 ) {
 	loop.chainClient = client
 	loop.vault = vault
 	loop.perpetual = perpetual
+	loop.priceFeed = priceFeed
 	loop.decisionLog = decisionLog
 	loop.storageAnchor = storageAnchor
 }
@@ -150,58 +164,79 @@ func (loop *Loop) Stop() {
 
 func (loop *Loop) tick() {
 	log.Println("Agent tick: Observe → Think → Act → Log")
+	loop.mu.Lock()
+	loop.status.TotalTicks++
+	loop.mu.Unlock()
 
+	for _, pair := range pyth.Pairs {
+		loop.tickPair(pair.Symbol, pair.PriceID)
+	}
+}
+
+func (loop *Loop) tickPair(symbol, priceID string) {
 	// ── 1. OBSERVE: Fetch price ──────────────────────────────────────────
-	priceData, err := loop.pyth.GetETHPrice()
+	priceData, err := loop.pyth.GetPrice(priceID)
 	if err != nil {
-		log.Printf("Pyth price error: %v", err)
+		log.Printf("[%s] Pyth price error: %v", symbol, err)
 		return
 	}
 
 	currentPrice := priceData.Price
 	loop.mu.Lock()
-	previousPrice := loop.prevPrice
-	loop.prevPrice = currentPrice
-	loop.priceHistory = append(loop.priceHistory, currentPrice)
-	if len(loop.priceHistory) > maxPriceHistory {
-		loop.priceHistory = loop.priceHistory[1:]
+	state := loop.pairState[symbol]
+	previousPrice := state.prevPrice
+	state.prevPrice = currentPrice
+	state.priceHistory = append(state.priceHistory, currentPrice)
+	if len(state.priceHistory) > maxPriceHistory {
+		state.priceHistory = state.priceHistory[1:]
 	}
-	priceSnapshot := make([]float64, len(loop.priceHistory))
-	copy(priceSnapshot, loop.priceHistory)
+	priceSnapshot := make([]float64, len(state.priceHistory))
+	copy(priceSnapshot, state.priceHistory)
 	loop.status.LastPrice = currentPrice
-	loop.status.TotalTicks++
 	loop.mu.Unlock()
 
-	log.Printf("ETH/USD: $%.2f (tick #%d)", currentPrice, loop.status.TotalTicks)
+	log.Printf("[%s] $%.2f", symbol, currentPrice)
+
+	// Push price on-chain every 6 ticks (~1 min) to save gas
+	loop.mu.Lock()
+	curTicks := loop.status.TotalTicks
+	loop.mu.Unlock()
+	if symbol == "ETH/USD" && loop.priceFeed != nil && loop.chainClient != nil && curTicks%6 == 0 {
+		if _, err := loop.priceFeed.SetPrice(currentPrice); err != nil {
+			log.Printf("[%s] SetPrice on-chain error: %v", symbol, err)
+		}
+	}
 
 	if len(priceSnapshot) < minPricesRequired {
-		log.Printf("Warming up price history (%d/%d)", len(priceSnapshot), minPricesRequired)
+		log.Printf("[%s] Warming up (%d/%d)", symbol, len(priceSnapshot), minPricesRequired)
 		return
 	}
 
 	// ── 2. OBSERVE: Fetch market context ────────────────────────────────
 	macroContext, _ := loop.news.FetchMacro()
-	microContext, _ := loop.news.FetchMicro("ETH", currentPrice, previousPrice)
+	asset := symbol[:len(symbol)-4] // "ETH/USD" → "ETH"
+	microContext, _ := loop.news.FetchMicro(asset, currentPrice, previousPrice)
+	newsContext, newsSentiment := loop.news.FetchHeadlines(asset)
 
 	// ── 3. THINK: Quant analysis ─────────────────────────────────────────
 	quantSignal, indicators := loop.quant.Analyze(priceSnapshot)
-	log.Printf("Quant: %s (strength %.2f) | RSI:%.1f MACD:%.4f",
-		quantSignal.Direction, quantSignal.Strength, indicators.RSI, indicators.MACD)
+	log.Printf("[%s] Quant: %s (strength %.2f) | RSI:%.1f MACD:%.4f",
+		symbol, quantSignal.Direction, quantSignal.Strength, indicators.RSI, indicators.MACD)
 
 	// ── 4. THINK: AI reasoning via DeepSeek (0G Compute) ────────────────
-	aiSignal := loop.queryAI(macroContext, microContext, currentPrice, indicators, quantSignal)
+	aiSignal := loop.queryAI(macroContext, microContext, newsContext, newsSentiment, currentPrice, indicators, quantSignal)
 
 	// ── 5. THINK: Combine signals (40% quant + 60% AI) ──────────────────
 	combinedSignal := CombineSignals(quantSignal, aiSignal)
-	log.Printf("Combined: %s (strength %.2f)", combinedSignal.Direction, combinedSignal.Strength)
+	log.Printf("[%s] Combined: %s (strength %.2f)", symbol, combinedSignal.Direction, combinedSignal.Strength)
 
-	// ── 6. ACT: Manage existing open positions ──────────────────────────
-	loop.manageOpenPositions(currentPrice)
+	// ── 6. ACT: Manage existing open positions for this pair ────────────
+	loop.manageOpenPositions(symbol, currentPrice)
 
 	// ── 7. ACT: Maybe open new position ─────────────────────────────────
 	action := "hold"
 	var transactionHash string
-	openCount := loop.countOpenPositions()
+	openCount := loop.countOpenPositionsByPair(symbol)
 
 	absoluteStrength := combinedSignal.Strength
 	if absoluteStrength < 0 {
@@ -210,17 +245,17 @@ func (loop *Loop) tick() {
 
 	if openCount == 0 && absoluteStrength > 0.3 {
 		var openErr error
-		transactionHash, openErr = loop.openPosition(combinedSignal, currentPrice)
+		transactionHash, openErr = loop.openPosition(symbol, combinedSignal, currentPrice)
 		if openErr != nil {
-			log.Printf("Open position error: %v", openErr)
+			log.Printf("[%s] Open position error: %v", symbol, openErr)
 		} else {
 			action = fmt.Sprintf("open_%s", combinedSignal.Direction)
-			log.Printf("Opened %s at $%.2f tx: %s", combinedSignal.Direction, currentPrice, transactionHash)
+			log.Printf("[%s] Opened %s at $%.2f tx: %s", symbol, combinedSignal.Direction, currentPrice, transactionHash)
 		}
 	}
 
 	// ── 8. LOG: Build decision record ────────────────────────────────────
-	reasoning := loop.buildReasoning(macroContext, microContext, indicators, combinedSignal, action)
+	reasoning := loop.buildReasoning(macroContext, microContext, newsContext, newsSentiment, indicators, combinedSignal, action)
 	decisionHash := HashDecision(combinedSignal, action, reasoning)
 
 	indicatorJSON, _ := json.Marshal(indicators)
@@ -236,19 +271,22 @@ func (loop *Loop) tick() {
 		TxHash:       transactionHash,
 	}
 
-	// ── 9. LOG: On-chain DecisionLog (if available) ──────────────────────
-	if loop.decisionLog != nil && loop.chainClient != nil {
+	// ── 9. LOG: On-chain DecisionLog — only every 6 ticks (~1 min) to save gas ──
+	loop.mu.Lock()
+	ticks := loop.status.TotalTicks
+	loop.mu.Unlock()
+	if loop.decisionLog != nil && loop.chainClient != nil && ticks%6 == 0 {
 		onChainTxHash, logErr := loop.decisionLog.LogDecision(decisionHash)
 		if logErr != nil {
-			log.Printf("On-chain decision log error: %v", logErr)
+			log.Printf("[%s] On-chain decision log error: %v", symbol, logErr)
 		} else {
 			decision.TxHash = onChainTxHash
-			log.Printf("Decision logged on-chain: %s", onChainTxHash)
+			log.Printf("[%s] Decision logged on-chain: %s", symbol, onChainTxHash)
 		}
 	}
 
 	if err := loop.repo.Decision.Create(decision); err != nil {
-		log.Printf("Save decision error: %v", err)
+		log.Printf("[%s] Save decision error: %v", symbol, err)
 	}
 
 	// ── 10. LOG: Upload full trace to 0G Storage + anchor on-chain ───────
@@ -260,18 +298,19 @@ func (loop *Loop) tick() {
 	loop.mu.Unlock()
 
 	loop.broadcastUpdate(currentPrice, combinedSignal, action)
-	log.Println("Agent tick completed")
+	log.Printf("[%s] tick completed", symbol)
 }
 
 // queryAI gets a trading signal from DeepSeek via 0G Compute
-func (loop *Loop) queryAI(macroContext, microContext string, currentPrice float64, indicators *quant.IndicatorResult, quantSignal *model.Signal) *model.Signal {
-	prompt := fmt.Sprintf(`You are a crypto trading agent analyzing ETH/USD.
+func (loop *Loop) queryAI(macroContext, microContext, newsContext string, newsSentiment float64, currentPrice float64, indicators *quant.IndicatorResult, quantSignal *model.Signal) *model.Signal {
+	prompt := fmt.Sprintf(`You are a crypto trading agent analyzing a crypto/USD pair.
 
 Market Context:
 - %s
 - %s
+- %s
 
-Technical Indicators (ETH/USD at $%.2f):
+Technical Indicators (at $%.2f):
 - RSI: %.1f (>70 overbought, <30 oversold)
 - MACD: %.4f (positive = bullish momentum)
 - MA(20): %.2f
@@ -280,7 +319,7 @@ Technical Indicators (ETH/USD at $%.2f):
 Quant Signal: %s (strength %.2f)
 
 Respond ONLY with JSON: {"direction":"long or short","strength":0.0-1.0,"reasoning":"max 2 sentences"}`,
-		macroContext, microContext, currentPrice,
+		macroContext, microContext, newsContext, currentPrice,
 		indicators.RSI, indicators.MACD, indicators.MA, indicators.Bollinger,
 		quantSignal.Direction, quantSignal.Strength,
 	)
@@ -289,12 +328,27 @@ Respond ONLY with JSON: {"direction":"long or short","strength":0.0-1.0,"reasoni
 		{Role: "user", Content: prompt},
 	})
 	if err != nil {
-		log.Printf("DeepSeek error: %v — using quant fallback", err)
+		log.Printf("DeepSeek error: %v — using quant+news fallback", err)
+		// Apply news sentiment as a 30% modifier on top of quant
+		sentimentBoost := 1.0 + newsSentiment*0.3
+		adjustedStrength := quantSignal.Strength * 0.5 * sentimentBoost
+		if adjustedStrength > 1.0 {
+			adjustedStrength = 1.0
+		}
+		if adjustedStrength < -1.0 {
+			adjustedStrength = -1.0
+		}
+		label := "neutral"
+		if newsSentiment > 0.2 {
+			label = "bullish"
+		} else if newsSentiment < -0.2 {
+			label = "bearish"
+		}
 		return &model.Signal{
 			Source:    model.SignalSourceAI,
 			Direction: quantSignal.Direction,
-			Strength:  quantSignal.Strength * 0.5,
-			Metadata:  "AI unavailable, fallback to quant",
+			Strength:  adjustedStrength,
+			Metadata:  fmt.Sprintf("AI unavailable; news sentiment: %s (%.2f), quant+news fallback", label, newsSentiment),
 		}
 	}
 
@@ -334,8 +388,8 @@ Respond ONLY with JSON: {"direction":"long or short","strength":0.0-1.0,"reasoni
 	}
 }
 
-// manageOpenPositions checks stop loss / take profit for all open positions
-func (loop *Loop) manageOpenPositions(currentPrice float64) {
+// manageOpenPositions checks stop loss / take profit for open positions of this pair only
+func (loop *Loop) manageOpenPositions(pair string, currentPrice float64) {
 	positions, err := loop.repo.Position.FindAllOpen()
 	if err != nil {
 		log.Printf("Find open positions error: %v", err)
@@ -344,6 +398,9 @@ func (loop *Loop) manageOpenPositions(currentPrice float64) {
 
 	for index := range positions {
 		position := &positions[index]
+		if position.Pair != pair {
+			continue
+		}
 		entryPrice := parseFloatString(position.EntryPrice)
 		if entryPrice == 0 {
 			continue
@@ -366,10 +423,10 @@ func (loop *Loop) manageOpenPositions(currentPrice float64) {
 }
 
 // openPosition executes a new trade (on-chain or simulated)
-func (loop *Loop) openPosition(combinedSignal CombinedSignal, currentPrice float64) (string, error) {
+func (loop *Loop) openPosition(pair string, combinedSignal CombinedSignal, currentPrice float64) (string, error) {
 	agentAddress := loop.agentAddress()
 
-	margin := big.NewInt(1e17) // 0.1 0G default demo margin
+	margin := big.NewInt(10_000_000) // 10 USDC.e default demo margin (6 decimals)
 	if loop.vault != nil && loop.chainClient != nil {
 		if availableBalance, err := loop.vault.GetAvailableBalance(agentAddress); err == nil && availableBalance.Sign() > 0 {
 			margin = new(big.Int).Div(availableBalance, big.NewInt(10))
@@ -402,6 +459,7 @@ func (loop *Loop) openPosition(combinedSignal CombinedSignal, currentPrice float
 	positionSize := weiToEtherFloat(margin) * float64(positionSizing.Leverage)
 	newPosition := &model.Position{
 		Trader:     agentAddress.Hex(),
+		Pair:       pair,
 		Direction:  combinedSignal.Direction,
 		Size:       fmt.Sprintf("%.6f", positionSize),
 		Leverage:   positionSizing.Leverage,
@@ -472,6 +530,13 @@ func (loop *Loop) closePosition(position *model.Position, currentPrice float64) 
 }
 
 func (loop *Loop) saveSignal(signal *model.Signal, metadata string) uint {
+	// ensure metadata is valid JSON for jsonb column
+	if len(metadata) == 0 {
+		metadata = `""`
+	} else if metadata[0] != '{' && metadata[0] != '[' && metadata[0] != '"' {
+		b, _ := json.Marshal(metadata)
+		metadata = string(b)
+	}
 	signal.Metadata = metadata
 	if err := loop.repo.Signal.Create(signal); err != nil {
 		log.Printf("Save signal error: %v", err)
@@ -480,9 +545,8 @@ func (loop *Loop) saveSignal(signal *model.Signal, metadata string) uint {
 	return signal.ID
 }
 
-func (loop *Loop) countOpenPositions() int {
-	agentAddress := loop.agentAddress()
-	positions, err := loop.repo.Position.FindOpenByTrader(agentAddress.Hex())
+func (loop *Loop) countOpenPositionsByPair(pair string) int {
+	positions, err := loop.repo.Position.FindOpenByPair(pair)
 	if err != nil {
 		return 0
 	}
@@ -496,12 +560,12 @@ func (loop *Loop) agentAddress() common.Address {
 	return common.HexToAddress("0x0000000000000000000000000000000000000001")
 }
 
-func (loop *Loop) buildReasoning(macroContext, microContext string, indicators *quant.IndicatorResult, combinedSignal CombinedSignal, action string) string {
+func (loop *Loop) buildReasoning(macroContext, microContext, newsContext string, newsSentiment float64, indicators *quant.IndicatorResult, combinedSignal CombinedSignal, action string) string {
 	return fmt.Sprintf(
-		"action=%s dir=%s strength=%.2f rsi=%.1f macd=%.4f ma=%.2f bb=%.2f | %s | %s",
+		"action=%s dir=%s strength=%.2f rsi=%.1f macd=%.4f ma=%.2f bb=%.2f news=%.2f | %s | %s | %s",
 		action, combinedSignal.Direction, combinedSignal.Strength,
 		indicators.RSI, indicators.MACD, indicators.MA, indicators.Bollinger,
-		macroContext, microContext,
+		newsSentiment, macroContext, microContext, newsContext,
 	)
 }
 
@@ -577,7 +641,7 @@ func parseFloatString(value string) float64 {
 	return result
 }
 
-func weiToEtherFloat(weiValue *big.Int) float64 {
-	floatValue, _ := new(big.Float).SetInt(weiValue).Float64()
-	return floatValue / 1e18
+func weiToEtherFloat(usdcValue *big.Int) float64 {
+	floatValue, _ := new(big.Float).SetInt(usdcValue).Float64()
+	return floatValue / 1e6 // USDC.e has 6 decimals
 }

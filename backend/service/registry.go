@@ -24,9 +24,12 @@ type Registry struct {
 	Storage   *storage.Client
 	WebSocket *websocket.Hub
 	AgentLoop *agent.Loop
+	Indexer   *chain.Indexer
 }
 
 func NewRegistry(cfg *config.AppConfig, repo *repository.Registry) *Registry {
+	var chainIndexer *chain.Indexer
+
 	quantEngine := quant.NewEngine()
 	deepseekClient := deepseek.NewClient(cfg.DeepSeekURL, cfg.DeepSeekAPIKey)
 	pythClient := pyth.NewClient(cfg.PythContract)
@@ -67,6 +70,11 @@ func NewRegistry(cfg *config.AppConfig, repo *repository.Registry) *Registry {
 				log.Printf("WARNING: perpetual ABI parse failed: %v", perpErr)
 			}
 
+			var priceFeedBinding *chain.PriceFeedBinding
+			if cfg.PriceFeedAddress != "" {
+				priceFeedBinding, _ = chain.NewPriceFeedBinding(chainClient, cfg.PriceFeedAddress)
+			}
+
 			var decisionLogBinding *chain.DecisionLogBinding
 			if cfg.DecisionLogAddress != "" {
 				decisionLogBinding = chain.NewDecisionLogBinding(chainClient, cfg.DecisionLogAddress)
@@ -80,10 +88,21 @@ func NewRegistry(cfg *config.AppConfig, repo *repository.Registry) *Registry {
 			if perpetualBinding != nil {
 				agentLoop.SetChainBindings(
 					chainClient, vaultBinding, perpetualBinding,
-					decisionLogBinding, storageAnchorBinding,
+					priceFeedBinding, decisionLogBinding, storageAnchorBinding,
 				)
-				log.Printf("Chain bindings initialized (vault=%s perpetual=%s storage_anchor=%s)",
-					cfg.VaultAddress, cfg.PerpetualAddress, cfg.StorageAnchorAddress)
+				log.Printf("Chain bindings initialized (vault=%s perpetual=%s pricefeed=%s storage_anchor=%s)",
+					cfg.VaultAddress, cfg.PerpetualAddress, cfg.PriceFeedAddress, cfg.StorageAnchorAddress)
+			}
+
+			if cfg.PerpetualAddress != "" && cfg.VaultAddress != "" {
+				indexer, indexerErr := chain.NewIndexer(chainClient, cfg.PerpetualAddress, cfg.VaultAddress, repo)
+				if indexerErr != nil {
+					log.Printf("WARNING: indexer init failed: %v", indexerErr)
+				} else {
+					go indexer.Start()
+					chainIndexer = indexer
+					log.Println("Chain indexer started")
+				}
 			}
 		}
 	} else {
@@ -98,5 +117,6 @@ func NewRegistry(cfg *config.AppConfig, repo *repository.Registry) *Registry {
 		Storage:   storageClient,
 		WebSocket: wsHub,
 		AgentLoop: agentLoop,
+		Indexer:   chainIndexer,
 	}
 }

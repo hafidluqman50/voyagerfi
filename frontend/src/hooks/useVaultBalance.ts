@@ -1,7 +1,9 @@
 import { useReadContract } from "wagmi";
-import { formatEther } from "viem";
+import { formatUnits } from "viem";
 import { VAULT_ADDRESS, VAULT_ABI } from "@/lib/contracts";
 import type { Address } from "viem";
+
+const USDC_DECIMALS = 6;
 
 export function useVaultBalance(address: Address | undefined) {
   const total = useReadContract({
@@ -29,9 +31,9 @@ export function useVaultBalance(address: Address | undefined) {
   });
 
   return {
-    total:     total.data     != null ? formatEther(total.data)     : null,
-    available: available.data != null ? formatEther(available.data) : null,
-    locked:    locked.data    != null ? formatEther(locked.data)    : null,
+    total:     total.data     != null ? formatUnits(total.data,     USDC_DECIMALS) : null,
+    available: available.data != null ? formatUnits(available.data, USDC_DECIMALS) : null,
+    locked:    locked.data    != null ? formatUnits(locked.data,    USDC_DECIMALS) : null,
     isLoading: total.isLoading,
   };
 }

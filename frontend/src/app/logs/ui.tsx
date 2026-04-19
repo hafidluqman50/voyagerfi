@@ -125,7 +125,7 @@ export function LogsUI() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 border border-border rounded-2xl overflow-hidden bg-card">
+        <div className="grid grid-cols-4 border border-border rounded-2xl overflow-hidden bg-card">
           <div className="px-5 py-4 border-r border-border">
             <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium mb-1">Total Decisions</p>
             <p className="text-xl font-semibold">{decisions.length}</p>
@@ -136,8 +136,14 @@ export function LogsUI() {
               {decisions.filter((d) => d.action !== "hold").length}
             </p>
           </div>
+          <div className="px-5 py-4 border-r border-border">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium mb-1">Hashed & Signed</p>
+            <p className="text-xl font-semibold text-positive">
+              {decisions.filter((d) => !!d.decision_hash).length}
+            </p>
+          </div>
           <div className="px-5 py-4">
-            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium mb-1">Verified On-chain</p>
+            <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium mb-1">Anchored On-Chain</p>
             <p className="text-xl font-semibold text-positive">
               {decisions.filter((d) => !!d.tx_hash).length}
             </p>

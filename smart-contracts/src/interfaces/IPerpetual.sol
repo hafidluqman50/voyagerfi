@@ -15,6 +15,7 @@ interface IPerpetual {
         uint256 leverage;
         uint256 entryPrice;
         uint256 margin;
+        uint256 fee;
         bool isOpen;
         uint256 openedAt;
     }

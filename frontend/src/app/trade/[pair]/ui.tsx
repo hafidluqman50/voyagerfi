@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/app-layout";
 import { RealtimeCandleChart, type ChartInterval } from "@/components/charts/price-chart";
-import { Input } from "@/components/ui/input";
 import { useTicker24h } from "@/hooks/useTicker24h";
 import { useFundingRate } from "@/hooks/useFundingRate";
 import { cn } from "@/lib/utils";
 import type { BinanceSymbol } from "@/hooks/useKlines";
+
+const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 const PAIR_META: Record<string, { ticker: BinanceSymbol; label: string }> = {
   "ETH-USD": { ticker: "ETHUSDT", label: "Ethereum" },
@@ -53,84 +55,111 @@ function fmtFundingCountdown(nextFundingTime: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/* ── Order form ── */
-function OrderForm({ price }: { price: number }) {
-  const [dir, setDir] = useState<"long" | "short">("long");
-  const [size, setSize] = useState("");
-  const [lev, setLev]  = useState(5);
+/* ── Agent Activity Panel ── */
+function AgentPanel({ pair }: { pair: string }) {
+  const symbol = pair.replace("-", "/"); // "BTC-USD" → "BTC/USD"
 
-  const margin   = size ? `$${(parseFloat(size) / lev).toFixed(2)}` : "—";
-  const notional = size ? `$${parseFloat(size).toLocaleString()}` : "—";
+  const { data: status } = useQuery({
+    queryKey: ["agent-status"],
+    queryFn: () => fetch(`${API}/agent/status`).then(r => r.json()),
+    refetchInterval: 10_000,
+  });
+
+  const { data: decisions } = useQuery({
+    queryKey: ["decisions"],
+    queryFn: () => fetch(`${API}/decisions`).then(r => r.json()),
+    refetchInterval: 10_000,
+    select: (d: any) => (d.decisions ?? []).slice(0, 5),
+  });
+
+  const { data: positions } = useQuery({
+    queryKey: ["positions-open"],
+    queryFn: () => fetch(`${API}/positions/open`).then(r => r.json()).catch(() => ({ positions: [] })),
+    refetchInterval: 10_000,
+    select: (d: any) => d.positions ?? [],
+  });
+
+  const isRunning = status?.running ?? false;
+  const lastTick  = status?.last_tick ? new Date(status.last_tick).toLocaleTimeString() : "—";
+  const winRate   = status?.win_rate != null ? `${(status.win_rate * 100).toFixed(1)}%` : "—";
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-2">
-        {(["long", "short"] as const).map(d => (
-          <button
-            key={d}
-            onClick={() => setDir(d)}
-            className={cn(
-              "py-2.5 rounded-xl text-sm font-semibold border transition-all capitalize",
-              dir === d
-                ? d === "long"
-                  ? "bg-positive/15 text-positive border-positive"
-                  : "bg-negative/15 text-negative border-negative"
-                : "border-border text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {d === "long" ? "↑ Long" : "↓ Short"}
-          </button>
-        ))}
+      {/* Status */}
+      <div className="bg-secondary rounded-xl px-4 py-3 flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-muted-foreground font-medium uppercase tracking-widest">Agent</span>
+          <span className={cn("text-xs font-semibold flex items-center gap-1.5", isRunning ? "text-positive" : "text-muted-foreground")}>
+            <span className={cn("w-1.5 h-1.5 rounded-full", isRunning ? "bg-positive animate-pulse" : "bg-muted-foreground")} />
+            {isRunning ? "Running" : "Offline"}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs">
+          <div>
+            <p className="text-muted-foreground">Last tick</p>
+            <p className="font-mono font-medium">{lastTick}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Win rate</p>
+            <p className="font-mono font-medium text-positive">{winRate}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Total trades</p>
+            <p className="font-mono font-medium">{status?.total_trades ?? "—"}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Watching</p>
+            <p className="font-mono font-medium">{symbol}</p>
+          </div>
+        </div>
       </div>
 
+      {/* Open positions */}
       <div>
-        <label className="text-xs text-muted-foreground mb-1.5 block">Size (USDC.e)</label>
-        <Input
-          value={size}
-          onChange={e => setSize(e.target.value)}
-          placeholder="0.00"
-          className="bg-secondary font-mono h-10 rounded-xl"
-        />
+        <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium mb-2">Open Positions</p>
+        {positions?.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {positions.map((p: any) => (
+              <div key={p.id} className="bg-secondary rounded-xl px-3 py-2.5 text-xs flex items-center justify-between">
+                <div>
+                  <span className={cn("font-bold", p.direction === "long" ? "text-positive" : "text-negative")}>
+                    {p.direction === "long" ? "↑ Long" : "↓ Short"}
+                  </span>
+                  <span className="text-muted-foreground ml-2">{p.leverage}×</span>
+                </div>
+                <div className="text-right">
+                  <p className="font-mono">@ ${parseFloat(p.entry_price).toLocaleString()}</p>
+                  <p className="text-muted-foreground">{p.size} USDC.e</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No open positions</p>
+        )}
       </div>
 
-      <div className="bg-secondary rounded-xl px-4 py-3">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-xs text-muted-foreground">Leverage</span>
-          <span className="text-sm font-bold font-mono text-primary">{lev}×</span>
-        </div>
-        <input
-          type="range" min={1} max={50} value={lev}
-          onChange={e => setLev(+e.target.value)}
-          className="w-full h-1.5 rounded-full appearance-none cursor-pointer accent-primary bg-border"
-        />
-        <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
-          <span>1×</span><span>10×</span><span>25×</span><span>50×</span>
-        </div>
+      {/* Recent decisions */}
+      <div>
+        <p className="text-xs text-muted-foreground uppercase tracking-widest font-medium mb-2">Recent Decisions</p>
+        {decisions?.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {decisions.map((d: any) => (
+              <div key={d.id} className="bg-secondary rounded-xl px-3 py-2 text-xs">
+                <div className="flex items-center justify-between mb-0.5">
+                  <span className={cn("font-semibold", d.action?.includes("long") ? "text-positive" : d.action?.includes("short") ? "text-negative" : "text-muted-foreground")}>
+                    {d.action ?? "hold"}
+                  </span>
+                  <span className="text-muted-foreground">{new Date(d.created_at).toLocaleTimeString()}</span>
+                </div>
+                <p className="text-muted-foreground line-clamp-2">{d.reasoning?.slice(0, 80)}…</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No decisions yet</p>
+        )}
       </div>
-
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <div className="bg-secondary rounded-xl px-3 py-2.5">
-          <p className="text-muted-foreground mb-0.5">Margin</p>
-          <p className="font-mono font-semibold">{margin}</p>
-        </div>
-        <div className="bg-secondary rounded-xl px-3 py-2.5">
-          <p className="text-muted-foreground mb-0.5">Notional</p>
-          <p className="font-mono font-semibold">{notional}</p>
-        </div>
-      </div>
-
-      <button className={cn(
-        "w-full py-3 rounded-xl font-bold text-sm transition-all",
-        dir === "long"
-          ? "bg-positive text-white hover:bg-positive/90"
-          : "bg-negative text-white hover:bg-negative/90"
-      )}>
-        {dir === "long" ? "↑ Open Long" : "↓ Open Short"}
-      </button>
-
-      <p className="text-[10px] text-muted-foreground text-center">
-        Mark price: <span className="font-mono">{fmtPrice(price)}</span>
-      </p>
     </div>
   );
 }
@@ -278,10 +307,12 @@ export function TradePairUI({ pair }: { pair: string }) {
             </div>
           </div>
 
-          {/* Order form */}
-          <div className="bg-card border border-border rounded-2xl shadow-sm p-5">
-            <p className="text-sm font-semibold mb-4">Place Order</p>
-            <OrderForm price={price} />
+          {/* Agent activity */}
+          <div className="bg-card border border-border rounded-2xl shadow-sm flex flex-col h-[430px]">
+            <p className="text-sm font-semibold px-5 py-3.5 border-b border-border shrink-0">Agent Activity</p>
+            <div className="flex-1 overflow-y-auto p-5">
+              <AgentPanel pair={pair} />
+            </div>
           </div>
         </div>
 

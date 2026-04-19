@@ -3,11 +3,14 @@ pragma solidity ^0.8.24;
 
 import {IPerpetual} from "../interfaces/IPerpetual.sol";
 import {IDecisionLog} from "../interfaces/IDecisionLog.sol";
+import {IAgentRegistry} from "../interfaces/IAgentRegistry.sol";
+import {Errors} from "../libraries/Errors.sol";
+
 /// @notice Batched trade execution by agent with decision logging
 contract TradeExecutor {
     IPerpetual public perpetual;
     IDecisionLog public decisionLog;
-    address public agentRegistry;
+    IAgentRegistry public agentRegistry;
 
     struct TradeOrder {
         address trader;
@@ -22,16 +25,14 @@ contract TradeExecutor {
     uint256 public nextBatchId;
 
     modifier onlyAgent() {
-        (bool success, bytes memory data) =
-            agentRegistry.staticcall(abi.encodeWithSignature("isAgent(address)", msg.sender));
-        require(success && abi.decode(data, (bool)), "Not authorized agent");
+        if (!agentRegistry.isAgent(msg.sender)) revert Errors.Unauthorized();
         _;
     }
 
     constructor(address _perpetual, address _decisionLog, address _agentRegistry) {
         perpetual = IPerpetual(_perpetual);
         decisionLog = IDecisionLog(_decisionLog);
-        agentRegistry = _agentRegistry;
+        agentRegistry = IAgentRegistry(_agentRegistry);
     }
 
     function executeBatch(TradeOrder[] calldata orders) external onlyAgent {

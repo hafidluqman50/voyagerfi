@@ -19,10 +19,10 @@ func NewRiskManager(config RiskConfig) *RiskManager {
 
 func DefaultRiskConfig() RiskConfig {
 	return RiskConfig{
-		MaxPositionSize: 0.1, // 10% of balance
-		MaxDrawdown:     0.2, // 20% max drawdown
-		StopLossPercent: 0.05, // 5% stop loss
-		MaxLeverage:     10,
+		MaxPositionSize: 0.1,
+		MaxDrawdown:     0.2,
+		StopLossPercent: 0.05,
+		MaxLeverage:     15, // balanced: 8–15x range
 	}
 }
 
@@ -49,8 +49,8 @@ func (manager *RiskManager) EvaluateEntry(balance float64, signal *model.Signal)
 
 	margin := balance * manager.config.MaxPositionSize * signalStrength
 	leverage := uint(float64(manager.config.MaxLeverage) * signalStrength)
-	if leverage < 1 {
-		leverage = 1
+	if leverage < 8 {
+		leverage = 8
 	}
 
 	return PositionSizing{

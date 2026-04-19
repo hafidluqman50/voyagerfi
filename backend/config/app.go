@@ -19,6 +19,7 @@ type AppConfig struct {
 	// Contract addresses
 	VaultAddress         string
 	PerpetualAddress     string
+	PriceFeedAddress     string
 	AgentRegistryAddress string
 	DecisionLogAddress   string
 	StorageAnchorAddress string
@@ -39,6 +40,7 @@ func LoadConfig() *AppConfig {
 
 		VaultAddress:         getEnv("VAULT_ADDRESS", ""),
 		PerpetualAddress:     getEnv("PERPETUAL_ADDRESS", ""),
+		PriceFeedAddress:     getEnv("PRICE_FEED_ADDRESS", ""),
 		AgentRegistryAddress: getEnv("AGENT_REGISTRY_ADDRESS", ""),
 		DecisionLogAddress:   getEnv("DECISION_LOG_ADDRESS", ""),
 		StorageAnchorAddress: getEnv("STORAGE_ANCHOR_ADDRESS", ""),

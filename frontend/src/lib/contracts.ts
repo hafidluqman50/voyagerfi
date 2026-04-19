@@ -1,5 +1,38 @@
 import { type Address } from "viem";
 
+// ── USDC.e (XSwap Bridged USDC on 0G Chain Mainnet) ──────────────────────────
+export const USDC_ADDRESS: Address = "0x1f3aa82227281ca364bfb3d253b0f1af1da6473e";
+
+export const USDC_ABI = [
+  {
+    name: "approve",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    name: "allowance",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    name: "balanceOf",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
 // ── Contract addresses (set via .env.local) ───────────────────────────────────
 export const VAULT_ADDRESS =
   (process.env.NEXT_PUBLIC_VAULT_ADDRESS as Address | undefined) ??
@@ -22,8 +55,8 @@ export const VAULT_ABI = [
   {
     name: "deposit",
     type: "function",
-    stateMutability: "payable",
-    inputs: [],
+    stateMutability: "nonpayable",
+    inputs: [{ name: "amount", type: "uint256" }],
     outputs: [],
   },
   {

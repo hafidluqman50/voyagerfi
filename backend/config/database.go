@@ -9,7 +9,10 @@ import (
 )
 
 func InitDatabase(databaseURL string) *gorm.DB {
-	db, err := gorm.Open(postgres.Open(databaseURL), &gorm.Config{
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  databaseURL,
+		PreferSimpleProtocol: true, // disable prepared statements (required for pgBouncer)
+	}), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info),
 	})
 	if err != nil {

@@ -37,3 +37,23 @@ func GetOpenPositions(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"positions": positions})
 }
+
+// GetAgentPositions returns all agent positions (public, no auth)
+func GetAgentPositions(c *gin.Context) {
+	positions, err := positionRepo.FindAll()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"positions": positions})
+}
+
+// GetAgentOpenPositions returns all open agent positions (public, no auth)
+func GetAgentOpenPositions(c *gin.Context) {
+	positions, err := positionRepo.FindAllOpen()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"positions": positions})
+}

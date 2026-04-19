@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { AppLayout } from "@/components/layout/app-layout";
 import { PriceSparkline } from "@/components/charts/price-sparkline";
@@ -174,6 +175,7 @@ export function DashboardUI() {
   const { data: agentStatus } = useAgentStatus();
   const { data: dashboard } = useDashboard();
   const { data: newsArticles = [] } = useNews();
+  const [showAllNews, setShowAllNews] = useState(false);
 
   const ethPrice = prices?.eth?.price ?? 0;
   const btcPrice = prices?.btc?.price ?? 0;
@@ -245,7 +247,7 @@ export function DashboardUI() {
         </div>
 
         {/* ── Trades + News ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 items-start">
 
           {/* Trades table */}
           <div className="bg-card border border-border rounded-2xl overflow-hidden">
@@ -262,7 +264,7 @@ export function DashboardUI() {
                 </span>
                 {isRunning && (
                   <span className="text-xs text-muted-foreground">
-                    Needs {20} price ticks to start trading
+                    Needs {5} price ticks per pair to start trading
                   </span>
                 )}
               </div>
@@ -329,23 +331,33 @@ export function DashboardUI() {
                   Loading news…
                 </div>
               ) : (
-                newsArticles.map((article: NewsArticle, index: number) => (
-                  <a
-                    key={index}
-                    href={article.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-start gap-3 px-5 py-3.5 hover:bg-accent/40 transition-colors block"
-                  >
-                    <div className="w-1 self-stretch rounded-full shrink-0 mt-0.5 bg-border" />
-                    <div className="min-w-0">
-                      <p className="text-sm leading-snug text-foreground line-clamp-2">{article.title}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {article.source} · {fmtAgo(article.published_at)} ago
-                      </p>
-                    </div>
-                  </a>
-                ))
+                <>
+                  {(showAllNews ? newsArticles : newsArticles.slice(0, 4)).map((article: NewsArticle, index: number) => (
+                    <a
+                      key={index}
+                      href={article.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-start gap-3 px-5 py-3.5 hover:bg-accent/40 transition-colors block"
+                    >
+                      <div className="w-1 self-stretch rounded-full shrink-0 mt-0.5 bg-border" />
+                      <div className="min-w-0">
+                        <p className="text-sm leading-snug text-foreground line-clamp-2">{article.title}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {article.source} · {fmtAgo(article.published_at)} ago
+                        </p>
+                      </div>
+                    </a>
+                  ))}
+                  {newsArticles.length > 4 && (
+                    <button
+                      onClick={() => setShowAllNews(v => !v)}
+                      className="w-full px-5 py-3 text-xs text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors text-center"
+                    >
+                      {showAllNews ? "Show less" : `Load ${newsArticles.length - 4} more`}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>

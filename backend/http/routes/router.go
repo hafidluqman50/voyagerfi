@@ -24,6 +24,7 @@ func Setup(repo *repository.Registry, svc *service.Registry) *gin.Engine {
 	handlers.ConfigureWSHandler(svc.WebSocket)
 	handlers.ConfigurePricesHandler(svc.Pyth)
 	handlers.ConfigureAgentHandler(svc.AgentLoop)
+	handlers.ConfigureSyncHandler(svc.Indexer)
 
 	// Public routes
 	api := r.Group("/api/v1")
@@ -34,6 +35,9 @@ func Setup(repo *repository.Registry, svc *service.Registry) *gin.Engine {
 		api.GET("/ws", handlers.HandleWebSocket)
 		api.GET("/decisions", handlers.GetDecisions)
 		api.GET("/news", handlers.GetNews)
+		api.POST("/sync", handlers.SyncNow)
+		api.GET("/agent/positions", handlers.GetAgentPositions)
+		api.GET("/agent/positions/open", handlers.GetAgentOpenPositions)
 	}
 
 	// Authenticated routes (wallet-based)

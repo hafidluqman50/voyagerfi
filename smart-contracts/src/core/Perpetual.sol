@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IPerpetual} from "../interfaces/IPerpetual.sol";
 import {IPriceFeed} from "../interfaces/IPriceFeed.sol";
 import {IVault} from "../interfaces/IVault.sol";
+import {IAgentRegistry} from "../interfaces/IAgentRegistry.sol";
 import {Errors} from "../libraries/Errors.sol";
 import {MathLib} from "../libraries/MathLib.sol";
 
@@ -16,33 +17,26 @@ contract Perpetual is IPerpetual {
 
     IVault public vault;
     IPriceFeed public priceFeed;
-    address public agentRegistry;
+    IAgentRegistry public agentRegistry;
 
     uint256 public nextPositionId;
     mapping(uint256 => Position) public positions;
     mapping(address => uint256[]) public traderPositions;
 
     modifier onlyAgent() {
-        (bool success, bytes memory data) =
-            agentRegistry.staticcall(abi.encodeWithSignature("isAgent(address)", msg.sender));
-        require(success && abi.decode(data, (bool)), "Not authorized agent");
+        if (!agentRegistry.isAgent(msg.sender)) revert Errors.Unauthorized();
         _;
     }
 
     modifier onlyAgentOrTrader(uint256 positionId) {
-        Position memory pos = positions[positionId];
-        bool isAgent = false;
-        (bool success, bytes memory data) =
-            agentRegistry.staticcall(abi.encodeWithSignature("isAgent(address)", msg.sender));
-        if (success) isAgent = abi.decode(data, (bool));
-        require(msg.sender == pos.trader || isAgent, "Not authorized");
+        if (msg.sender != positions[positionId].trader && !agentRegistry.isAgent(msg.sender)) revert Errors.Unauthorized();
         _;
     }
 
     constructor(address _vault, address _priceFeed, address _agentRegistry) {
         vault = IVault(_vault);
         priceFeed = IPriceFeed(_priceFeed);
-        agentRegistry = _agentRegistry;
+        agentRegistry = IAgentRegistry(_agentRegistry);
     }
 
     function openPosition(address trader, Direction direction, uint256 margin, uint256 leverage)
@@ -67,6 +61,7 @@ contract Perpetual is IPerpetual {
             leverage: leverage,
             entryPrice: price,
             margin: margin,
+            fee: fee,
             isOpen: true,
             openedAt: block.timestamp
         });
@@ -83,7 +78,7 @@ contract Perpetual is IPerpetual {
         int256 pnl = _calculatePnL(pos, currentPrice);
 
         pos.isOpen = false;
-        vault.releaseMargin(pos.trader, pos.margin);
+        vault.releaseMargin(pos.trader, pos.margin + pos.fee);
         vault.settleProfit(pos.trader, pnl);
 
         emit PositionClosed(positionId, currentPrice, pnl);
@@ -101,7 +96,7 @@ contract Perpetual is IPerpetual {
         if (pnl >= 0 || MathLib.abs(pnl) < maxLoss) revert Errors.NotLiquidatable();
 
         pos.isOpen = false;
-        vault.releaseMargin(pos.trader, pos.margin);
+        vault.releaseMargin(pos.trader, pos.margin + pos.fee);
         vault.settleProfit(pos.trader, pnl);
 
         emit PositionLiquidated(positionId, currentPrice);

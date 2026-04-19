@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"encoding/json"
+	"encoding/xml"
 	"io"
 	"log"
 	"net/http"
@@ -25,70 +25,78 @@ var (
 	newsCacheExpiry time.Time
 )
 
+type rssFeed struct {
+	Channel struct {
+		Items []struct {
+			Title   string `xml:"title"`
+			Link    string `xml:"link"`
+			PubDate string `xml:"pubDate"`
+			Desc    string `xml:"description"`
+		} `xml:"item"`
+	} `xml:"channel"`
+}
+
+var rssSources = []struct {
+	URL    string
+	Source string
+}{
+	{"https://cointelegraph.com/rss", "CoinTelegraph"},
+	{"https://coindesk.com/arc/outboundfeeds/rss/", "CoinDesk"},
+}
+
 func GetNews(c *gin.Context) {
 	if time.Now().Before(newsCacheExpiry) && len(newsCache) > 0 {
 		c.JSON(http.StatusOK, gin.H{"news": newsCache})
 		return
 	}
 
-	articles, err := fetchCoinGeckoNews()
-	if err != nil {
-		log.Printf("News fetch error: %v", err)
-		c.JSON(http.StatusOK, gin.H{"news": newsCache}) // return stale on error
+	articles := fetchRSSNews()
+	if len(articles) == 0 && len(newsCache) > 0 {
+		c.JSON(http.StatusOK, gin.H{"news": newsCache})
 		return
 	}
 
 	newsCache = articles
-	newsCacheExpiry = time.Now().Add(5 * time.Minute)
+	newsCacheExpiry = time.Now().Add(10 * time.Minute)
 	c.JSON(http.StatusOK, gin.H{"news": articles})
 }
 
-func fetchCoinGeckoNews() ([]newsArticle, error) {
-	resp, err := newsHttpClient.Get("https://api.coingecko.com/api/v3/news")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+func fetchRSSNews() []newsArticle {
+	var all []newsArticle
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	var result struct {
-		Data []struct {
-			Title       string `json:"title"`
-			Description string `json:"description"`
-			URL         string `json:"url"`
-			Author      struct {
-				Name string `json:"name"`
-			} `json:"author"`
-			UpdatedAt int64 `json:"updated_at"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, err
-	}
-
-	articles := make([]newsArticle, 0, 8)
-	for index, item := range result.Data {
-		if index >= 8 {
-			break
+	for _, src := range rssSources {
+		resp, err := newsHttpClient.Get(src.URL)
+		if err != nil {
+			log.Printf("RSS fetch error (%s): %v", src.Source, err)
+			continue
 		}
-		source := item.Author.Name
-		if source == "" {
-			source = "CoinGecko"
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			continue
 		}
-		articles = append(articles, newsArticle{
-			Title:       item.Title,
-			Description: item.Description,
-			URL:         item.URL,
-			Source:      source,
-			PublishedAt: time.Unix(item.UpdatedAt, 0).UTC().Format(time.RFC3339),
-			Sentiment:   "neutral",
-		})
+
+		var feed rssFeed
+		if err := xml.Unmarshal(body, &feed); err != nil {
+			log.Printf("RSS parse error (%s): %v", src.Source, err)
+			continue
+		}
+
+		for i, item := range feed.Channel.Items {
+			if i >= 4 {
+				break
+			}
+			all = append(all, newsArticle{
+				Title:       item.Title,
+				Description: item.Desc,
+				URL:         item.Link,
+				Source:      src.Source,
+				PublishedAt: item.PubDate,
+				Sentiment:   "neutral",
+			})
+		}
 	}
 
-	return articles, nil
+	return all
 }

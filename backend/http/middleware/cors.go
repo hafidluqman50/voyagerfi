@@ -7,7 +7,7 @@ import (
 
 func CORS() gin.HandlerFunc {
 	return cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "https://voyagerfi.xyz"},
+		AllowOrigins:     []string{"http://localhost:3000", "https://voyagerfi-app.vercel.app"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		AllowCredentials: true,

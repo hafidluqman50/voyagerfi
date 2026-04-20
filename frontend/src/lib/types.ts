@@ -32,6 +32,7 @@ export interface Decision {
 export interface Position {
   id: number;
   trader: string;
+  pair: string;
   direction: "long" | "short";
   size: string;
   leverage: number;

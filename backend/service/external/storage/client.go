@@ -72,14 +72,14 @@ func (c *Client) Upload(data []byte, metadata string) (string, error) {
 	}
 	defer file.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	opt := transfer.UploadOption{
 		ExpectedReplica: 1,
 		TaskSize:        10,
 		SkipTx:          false,
-		FastMode:        true,
+		FastMode:        false, // FastMode spawns goroutines that leak (ignore context cancellation)
 		Method:          "min",
 		FullTrusted:     true,
 	}

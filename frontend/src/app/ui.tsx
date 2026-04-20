@@ -1,6 +1,7 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import Image from "next/image";
 import Link from "next/link";
 
 export function LandingUI() {
@@ -10,10 +11,11 @@ export function LandingUI() {
       {/* ── Nav ── */}
       <header className="flex items-center justify-between px-6 md:px-12 h-16 border-b border-border bg-card">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
+          {/*<div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
             <span className="text-primary-foreground font-bold text-xs tracking-tight">VF</span>
           </div>
-          <span className="font-semibold text-[14px] tracking-tight">VoyagerFi</span>
+          <span className="font-semibold text-[14px] tracking-tight">VoyagerFi</span>*/}
+          <Image src={'/logo_voyagerfi_nobg.png'} width={200} height={200} draggable={false} alt="Logo VoyagerFi" />
         </div>
         <ConnectButton showBalance={false} chainStatus="none" accountStatus="address" />
       </header>
@@ -21,12 +23,6 @@ export function LandingUI() {
       {/* ── Hero ── */}
       <main className="flex-1 flex flex-col items-center justify-center px-6">
         <div className="max-w-lg text-center space-y-6">
-
-          {/* Status pill */}
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-border bg-card text-xs text-muted-foreground">
-            <span className="w-1.5 h-1.5 rounded-full bg-positive animate-pulse-dot" />
-            Live on 0G Chain · APAC Hackathon 2026
-          </div>
 
           {/* Headline */}
           <div className="space-y-3">

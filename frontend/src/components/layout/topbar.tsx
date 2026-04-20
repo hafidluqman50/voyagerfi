@@ -1,17 +1,14 @@
 "use client";
 
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import Image from "next/image";
 
 export function Topbar() {
-  console.log("WC ID:", process.env.NEXT_PUBLIC_WC_PROJECT_ID)
   return (
     <header className="h-14 flex items-center justify-between px-4 md:px-8 border-b border-border bg-card shrink-0">
       {/* Mobile logo */}
       <div className="flex items-center gap-2.5 md:hidden">
-        <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center">
-          <span className="text-white font-bold text-xs">V</span>
-        </div>
-        <span className="font-semibold text-[15px]">VoyagerFi</span>
+        <Image src={'/logo_voyagerfi_nobg.png'} width={200} height={200} draggable={false} alt="Logo VoyagerFi" />
       </div>
 
       <div className="hidden md:block" />

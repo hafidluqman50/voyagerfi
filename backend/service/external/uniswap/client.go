@@ -232,7 +232,10 @@ func (c *Client) SwapUSDCToToken(symbol string, amountUSDC *big.Int) (*big.Int, 
 		return nil, "", fmt.Errorf("approve USDC wait: %w", err)
 	}
 
-	minOut := applySlippage(amountUSDC, c.slippageBps)
+	minOut := big.NewInt(0)
+	if c.slippageBps > 0 {
+		minOut = applySlippage(amountUSDC, c.slippageBps)
+	}
 	data, err := c.routerABI.Pack("exactInputSingle", swapParams{
 		TokenIn: c.usdcAddr, TokenOut: tokenAddr, Fee: new(big.Int).SetUint64(uint64(FeeTier)),
 		Recipient: c.address, AmountIn: amountUSDC, AmountOutMinimum: minOut,
@@ -267,7 +270,10 @@ func (c *Client) SwapTokenToUSDC(symbol string, amount *big.Int) (*big.Int, stri
 		return nil, "", fmt.Errorf("approve %s wait: %w", symbol, err)
 	}
 
-	minOut := applySlippage(amount, c.slippageBps)
+	minOut := big.NewInt(0)
+	if c.slippageBps > 0 {
+		minOut = applySlippage(amount, c.slippageBps)
+	}
 	data, err := c.routerABI.Pack("exactInputSingle", swapParams{
 		TokenIn: tokenAddr, TokenOut: c.usdcAddr, Fee: new(big.Int).SetUint64(uint64(FeeTier)),
 		Recipient: c.address, AmountIn: amount, AmountOutMinimum: minOut,

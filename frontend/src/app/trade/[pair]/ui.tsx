@@ -6,7 +6,6 @@ import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/app-layout";
 import { RealtimeCandleChart, type ChartInterval } from "@/components/charts/price-chart";
 import { useTicker24h } from "@/hooks/useTicker24h";
-import { useFundingRate } from "@/hooks/useFundingRate";
 import { cn } from "@/lib/utils";
 import { fmtPrice, fmtCompact } from "@/lib/format";
 import type { BinanceSymbol } from "@/hooks/useKlines";
@@ -14,14 +13,11 @@ import type { BinanceSymbol } from "@/hooks/useKlines";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 const PAIR_META: Record<string, { ticker: BinanceSymbol; label: string }> = {
-  "ETH-USD": { ticker: "ETHUSDT", label: "Ethereum" },
-  "BTC-USD": { ticker: "BTCUSDT", label: "Bitcoin"  },
-  "SOL-USD": { ticker: "SOLUSDT", label: "Solana"   },
-  "ARB-USD": { ticker: "ARBUSDT", label: "Arbitrum" },
-  "BNB-USD": { ticker: "BNBUSDT", label: "BNB"      },
+  "ETH-USDC":  { ticker: "ETHUSDT", label: "Ethereum"       },
+  "WBTC-USDC": { ticker: "BTCUSDT", label: "Wrapped Bitcoin" },
+  "ARB-USDC":  { ticker: "ARBUSDT", label: "Arbitrum"        },
 };
 
-/* label shown → Binance interval string */
 const TIMEFRAMES: { label: string; interval: ChartInterval }[] = [
   { label: "1m",  interval: "1m"  },
   { label: "5m",  interval: "5m"  },
@@ -31,19 +27,9 @@ const TIMEFRAMES: { label: string; interval: ChartInterval }[] = [
   { label: "1D",  interval: "1d"  },
 ];
 
-function fmtFundingCountdown(nextFundingTime: number): string {
-  const now = Date.now();
-  const diff = nextFundingTime - now;
-  if (diff <= 0) return "—";
-  const h = Math.floor(diff / 3_600_000);
-  const m = Math.floor((diff % 3_600_000) / 60_000);
-  const s = Math.floor((diff % 60_000) / 1_000);
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
 /* ── Agent Activity Panel ── */
 function AgentPanel({ pair }: { pair: string }) {
-  const symbol = pair.replace("-", "/"); // "BTC-USD" → "BTC/USD"
+  const symbol = pair.replace("-", "/"); // "WBTC-USDC" → "WBTC/USDC"
 
   const { data: status } = useQuery({
     queryKey: ["agent-status"],
@@ -111,11 +97,11 @@ function AgentPanel({ pair }: { pair: string }) {
                   <span className={cn("font-bold", p.direction === "long" ? "text-positive" : "text-negative")}>
                     {p.direction === "long" ? "↑ Long" : "↓ Short"}
                   </span>
-                  <span className="text-muted-foreground ml-2">{p.leverage}×</span>
+                  <span className="text-muted-foreground ml-2">{p.pair}</span>
                 </div>
                 <div className="text-right">
                   <p className="font-mono">@ ${parseFloat(p.entry_price).toLocaleString()}</p>
-                  <p className="text-muted-foreground">{p.size} USDC.e</p>
+                  <p className="text-muted-foreground">{p.size} USDC</p>
                 </div>
               </div>
             ))}
@@ -157,15 +143,11 @@ export function TradePairUI({ pair }: { pair: string }) {
   const [livePrice, setLivePrice] = useState<number | null>(null);
 
   const meta = PAIR_META[pair] ?? null;
-  const { data: ticker }  = useTicker24h(meta?.ticker ?? "BTCUSDT");
-  const { data: funding } = useFundingRate(meta?.ticker ?? "BTCUSDT");
+  const { data: ticker } = useTicker24h(meta?.ticker ?? "BTCUSDT");
 
   const price     = livePrice ?? ticker?.lastPrice ?? 0;
   const changePct = ticker?.priceChangePercent ?? 0;
   const up        = changePct >= 0;
-
-  const fundingRate = funding?.lastFundingRate ?? null;
-  const fundingUp   = fundingRate !== null && fundingRate >= 0;
 
   if (!meta) {
     return (
@@ -196,7 +178,7 @@ export function TradePairUI({ pair }: { pair: string }) {
           </button>
           <div>
             <h1 className="text-lg font-semibold">{pair.replace("-", "/")}</h1>
-            <p className="text-xs text-muted-foreground">{meta.label} · Perpetual</p>
+            <p className="text-xs text-muted-foreground">{meta.label} · Spot</p>
           </div>
           <div className="ml-auto text-right">
             <p className="text-xl font-semibold font-mono">{fmtPrice(price)}</p>
@@ -206,46 +188,27 @@ export function TradePairUI({ pair }: { pair: string }) {
           </div>
         </div>
 
-        {/* ── 24h stats + funding rate bar ── */}
-        <div className="grid grid-cols-2 md:grid-cols-6 border border-border rounded-2xl overflow-hidden bg-card">
+        {/* ── 24h stats bar ── */}
+        <div className="grid grid-cols-2 md:grid-cols-4 border border-border rounded-2xl overflow-hidden bg-card">
           {[
-            { l: "24h High",    v: ticker ? fmtPrice(ticker.highPrice)    : "—" },
-            { l: "24h Low",     v: ticker ? fmtPrice(ticker.lowPrice)     : "—" },
-            { l: "24h Vol",     v: ticker ? `${ticker.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${pair.split("-")[0]}` : "—" },
-            { l: "Quote Vol",   v: ticker ? fmtCompact(ticker.quoteVolume): "—" },
-          ].map(s => (
-            <div key={s.l} className="flex flex-col gap-1 px-4 py-3 border-r border-border last:border-r-0">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">{s.l}</span>
-              <span className="text-sm font-semibold font-mono">{s.v}</span>
+            { label: "24h High",  value: ticker ? fmtPrice(ticker.highPrice)  : "—" },
+            { label: "24h Low",   value: ticker ? fmtPrice(ticker.lowPrice)   : "—" },
+            { label: "24h Vol",   value: ticker ? `${ticker.volume.toLocaleString("en-US", { maximumFractionDigits: 0 })} ${pair.split("-")[0]}` : "—" },
+            { label: "Quote Vol", value: ticker ? fmtCompact(ticker.quoteVolume) : "—" },
+          ].map(stat => (
+            <div key={stat.label} className="flex flex-col gap-1 px-4 py-3 border-r border-border last:border-r-0">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">{stat.label}</span>
+              <span className="text-sm font-semibold font-mono">{stat.value}</span>
             </div>
           ))}
-
-          {/* Funding Rate */}
-          <div className="flex flex-col gap-1 px-4 py-3 border-r border-border">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Funding Rate</span>
-            <span className={cn("text-sm font-semibold font-mono", fundingRate === null ? "text-muted-foreground" : fundingUp ? "text-positive" : "text-negative")}>
-              {fundingRate !== null
-                ? `${fundingUp ? "+" : ""}${(fundingRate * 100).toFixed(4)}%`
-                : "—"}
-            </span>
-          </div>
-
-          {/* Next Funding */}
-          <div className="flex flex-col gap-1 px-4 py-3">
-            <span className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium">Next Funding</span>
-            <span className="text-sm font-semibold font-mono tabular-nums">
-              {funding ? fmtFundingCountdown(funding.nextFundingTime) : "—"}
-            </span>
-          </div>
         </div>
 
-        {/* ── Chart + Order form ── */}
+        {/* ── Chart + Agent panel ── */}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
 
           {/* Chart */}
           <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-4 py-2.5 border-b border-border">
-              {/* Mobile: select dropdown */}
               <select
                 className="md:hidden bg-secondary text-foreground text-xs font-semibold rounded-lg px-2 py-1.5 border border-border focus:outline-none focus:ring-1 focus:ring-primary"
                 value={tf.label}
@@ -259,7 +222,6 @@ export function TradePairUI({ pair }: { pair: string }) {
                 ))}
               </select>
 
-              {/* Desktop: pill buttons */}
               <div className="hidden md:flex items-center gap-1">
                 {TIMEFRAMES.map(t => (
                   <button

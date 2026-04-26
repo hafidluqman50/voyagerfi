@@ -6,13 +6,12 @@ export const BTC_PTS_FALLBACK = [66800, 67100, 66900, 67400, 67200, 67500, 67300
 
 export function buildTradeRows(positions: Position[]) {
   return positions.slice(0, 5).map((p) => {
-    const side = p.direction === "long" ? "Buy" : "Sell";
     const entry = `$${parseFloat(p.entry_price).toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
     const pnlStr = p.pnl || (p.is_open ? "—" : "0%");
+    const marginUsdc = parseFloat(p.margin ?? "0") / 1e6;
     return {
-      pair: p.pair ?? "ETH/USD",
-      side,
-      size: `${parseFloat(p.size).toFixed(4)} USDC`,
+      pair: p.pair ?? "ETH/USDC",
+      size: Number.isFinite(marginUsdc) && marginUsdc > 0 ? `${marginUsdc.toFixed(2)} USDC` : "—",
       entry,
       pnl: pnlStr,
       pos: !pnlStr.startsWith("-"),

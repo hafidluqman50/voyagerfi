@@ -2,23 +2,31 @@
 pragma solidity ^0.8.24;
 
 import {IDecisionLog} from "../interfaces/IDecisionLog.sol";
-import {IAgentRegistry} from "../interfaces/IAgentRegistry.sol";
 import {Errors} from "../libraries/Errors.sol";
 
-/// @notice Stores decision hashes on-chain for verifiable sealed inference
-/// Each trade decision: signal input + LLM reasoning + decision = hash
 contract DecisionLog is IDecisionLog {
-    IAgentRegistry public agentRegistry;
-
+    address public owner;
+    address public agent;
     Decision[] public decisions;
 
-    modifier onlyAgent() {
-        if (!agentRegistry.isAgent(msg.sender)) revert Errors.Unauthorized();
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert Errors.Unauthorized();
         _;
     }
 
-    constructor(address _agentRegistry) {
-        agentRegistry = IAgentRegistry(_agentRegistry);
+    modifier onlyAgent() {
+        if (msg.sender != agent) revert Errors.Unauthorized();
+        _;
+    }
+
+    constructor(address _agent) {
+        owner = msg.sender;
+        agent = _agent;
+    }
+
+    function setAgent(address newAgent) external onlyOwner {
+        if (newAgent == address(0)) revert Errors.ZeroAddress();
+        agent = newAgent;
     }
 
     function logDecision(bytes32 decisionHash) external onlyAgent {
@@ -26,12 +34,11 @@ contract DecisionLog is IDecisionLog {
         decisions.push(
             Decision({
                 decisionHash: decisionHash,
-                storageRoot: bytes32(0), // Set later via anchorStorage
-                timestamp: block.timestamp,
-                agent: msg.sender
+                storageRoot:  bytes32(0),
+                timestamp:    block.timestamp,
+                agent:        msg.sender
             })
         );
-
         emit DecisionLogged(decisionId, decisionHash, msg.sender);
     }
 

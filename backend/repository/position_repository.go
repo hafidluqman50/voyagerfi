@@ -58,6 +58,10 @@ func (r *PositionRepository) FindAll() ([]model.Position, error) {
 	return positions, err
 }
 
+func (r *PositionRepository) DeleteAll() error {
+	return r.db.Where("1 = 1").Delete(&model.Position{}).Error
+}
+
 func (r *PositionRepository) DB() *gorm.DB {
 	return r.db
 }

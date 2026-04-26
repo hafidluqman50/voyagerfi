@@ -15,6 +15,10 @@ function fmtPrice(s: string): string {
 }
 
 function fmtSize(p: Position): string {
+  const margin = parseFloat(p.margin ?? "0");
+  if (Number.isFinite(margin) && margin > 0) {
+    return `${(margin / 1e6).toFixed(2)} USDC`;
+  }
   const size = parseFloat(p.size);
   return Number.isFinite(size) ? size.toFixed(4) : p.size || "—";
 }
@@ -92,8 +96,8 @@ export function PositionsUI() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {["Direction", "Size", "Leverage", "Entry", "Exit", "PnL", "Status", "Time"].map((h, i) => (
-                      <th key={h} className={cn("text-[10px] text-muted-foreground uppercase tracking-widest font-medium px-5 py-2.5 text-left", i >= 5 && "text-right")}>
+                    {["Pair", "Size (USDC)", "Entry", "Exit", "PnL", "Status", "Time"].map((h, i) => (
+                      <th key={h} className={cn("text-[10px] text-muted-foreground uppercase tracking-widest font-medium px-5 py-2.5 text-left", i >= 4 && "text-right")}>
                         {h}
                       </th>
                     ))}
@@ -105,13 +109,8 @@ export function PositionsUI() {
                     const pnlPos = pnl >= 0;
                     return (
                       <tr key={p.id} className="border-b border-border last:border-b-0 hover:bg-accent/40 transition-colors">
-                        <td className="px-5 py-3.5">
-                          <span className={cn("inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md", p.direction === "long" ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative")}>
-                            {p.direction === "long" ? "↑ Long" : "↓ Short"}
-                          </span>
-                        </td>
+                        <td className="px-5 py-3.5 text-sm font-mono font-semibold">{p.pair || "—"}</td>
                         <td className="px-5 py-3.5 text-sm font-mono text-muted-foreground">{fmtSize(p)}</td>
-                        <td className="px-5 py-3.5 text-sm font-mono text-muted-foreground">{p.leverage}×</td>
                         <td className="px-5 py-3.5 text-sm font-mono text-muted-foreground">{fmtPrice(p.entry_price)}</td>
                         <td className="px-5 py-3.5 text-sm font-mono text-muted-foreground">{p.exit_price ? fmtPrice(p.exit_price) : "—"}</td>
                         <td className="px-5 py-3.5 text-right">
@@ -140,15 +139,13 @@ export function PositionsUI() {
                 return (
                   <div key={p.id} className="px-4 py-3.5 flex flex-col gap-2">
                     <div className="flex items-center justify-between">
-                      <span className={cn("inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md", p.direction === "long" ? "bg-positive/10 text-positive" : "bg-negative/10 text-negative")}>
-                        {p.direction === "long" ? "↑ Long" : "↓ Short"}
-                      </span>
+                      <span className="text-sm font-mono font-semibold">{p.pair || "—"}</span>
                       <span className={cn("inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md", p.is_open ? "bg-positive/10 text-positive" : "bg-muted text-muted-foreground")}>
                         {p.is_open ? "Open" : "Closed"}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">@ {fmtPrice(p.entry_price)} · {p.leverage}× · {fmtSize(p)}</span>
+                      <span className="text-muted-foreground">@ {fmtPrice(p.entry_price)} · {fmtSize(p)}</span>
                       <span className={cn("font-mono font-medium", pnlPos ? "text-positive" : "text-negative")}>
                         {Number.isFinite(pnl) ? fmtPnl(pnl) : p.pnl || "—"}
                       </span>

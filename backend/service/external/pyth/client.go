@@ -21,14 +21,14 @@ const (
 
 // Pairs is the canonical list of supported trading pairs
 var Pairs = []struct {
-	Symbol  string
-	PriceID string
+	Symbol      string // Pyth feed label (used for logging only)
+	PriceID     string
+	DisplayPair string // pair name stored in DB and shown in UI
+	TradeAsset  string // key used in uniswap token map ("ETH", "BTC", "ARB")
 }{
-	{"ETH/USD", ETHUSDPriceID},
-	{"BTC/USD", BTCUSDPriceID},
-	{"SOL/USD", SOLUSDPriceID},
-	{"ARB/USD", ARBUSDPriceID},
-	{"BNB/USD", BNBUSDPriceID},
+	{"ETH/USD", ETHUSDPriceID, "ETH/USDC", "ETH"},
+	{"BTC/USD", BTCUSDPriceID, "WBTC/USDC", "BTC"},
+	{"ARB/USD", ARBUSDPriceID, "ARB/USDC", "ARB"},
 }
 
 type Client struct {
@@ -44,9 +44,9 @@ func NewClient(contract string) *Client {
 }
 
 type PriceData struct {
-	Price       float64 `json:"price"`
-	Timestamp   int64   `json:"timestamp"`
-	PriceID     string  `json:"price_id"`
+	Price        float64 `json:"price"`
+	Timestamp    int64   `json:"timestamp"`
+	PriceID      string  `json:"price_id"`
 	Change24hPct float64 `json:"change_24h_pct"`
 }
 
@@ -54,10 +54,10 @@ type hermesResponse struct {
 	Parsed []struct {
 		ID    string `json:"id"`
 		Price struct {
-			Price string `json:"price"`
-			Expo  int    `json:"expo"`
-			Conf  string `json:"conf"`
-			PublishTime int64 `json:"publish_time"`
+			Price       string `json:"price"`
+			Expo        int    `json:"expo"`
+			Conf        string `json:"conf"`
+			PublishTime int64  `json:"publish_time"`
 		} `json:"price"`
 		PrevPrice struct {
 			Price string `json:"price"`

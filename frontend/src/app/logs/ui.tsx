@@ -26,18 +26,23 @@ function shortHash(h: string): string {
 }
 
 function actionLabel(action: string): { label: string; style: string } {
+  if (action.startsWith("buy_")) {
+    const token = action.slice(4).toUpperCase();
+    return { label: `Buy ${token}`, style: "border-positive/30 text-positive bg-positive/5" };
+  }
+  if (action.startsWith("sell_")) {
+    const token = action.slice(5).toUpperCase();
+    return { label: `Sell ${token}`, style: "border-negative/30 text-negative bg-negative/5" };
+  }
   switch (action) {
-    case "open_long":  return { label: "Long",  style: "border-positive/30 text-positive bg-positive/5"   };
-    case "open_short": return { label: "Short", style: "border-negative/30 text-negative bg-negative/5"   };
-    case "close":      return { label: "Close", style: "border-primary/30 text-primary bg-primary/5"      };
-    case "hold":
-    default:           return { label: "Hold",  style: "border-border text-muted-foreground"               };
+    case "close": return { label: "Sell", style: "border-negative/30 text-negative bg-negative/5" };
+    default:      return { label: "Monitor", style: "border-border text-muted-foreground" };
   }
 }
 
 function DecisionCard({ d }: { d: Decision }) {
   const { label, style } = actionLabel(d.action);
-  const explorerBase = "https://chainscan.0g.ai/tx/";
+  const explorerBase = "https://sepolia.arbiscan.io/tx/";
 
   return (
     <div className="bg-card border border-border rounded-2xl shadow-sm p-5">
@@ -133,7 +138,7 @@ export function LogsUI() {
           <div className="px-5 py-4 border-r border-border">
             <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-medium mb-1">Trades Executed</p>
             <p className="text-xl font-semibold text-primary">
-              {decisions.filter((d) => d.action !== "hold").length}
+              {decisions.filter((d) => d.action.startsWith("buy_") || d.action.startsWith("sell_") || d.action === "close").length}
             </p>
           </div>
           <div className="px-5 py-4 border-r border-border">

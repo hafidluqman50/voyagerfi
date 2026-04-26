@@ -1,122 +1,72 @@
 # VoyagerFi
 
-> **"Autonomous quant + sentiment trading agent. Deposit, sleep, profit."**
+> **"AI-powered autonomous trading agent. Deposit, sleep, profit."**
 
-VoyagerFi is an autonomous trading agent platform running fully on-chain on **0G Chain**. Users deposit USDC.e, select a risk profile, and the agent — powered by quantitative indicators and real-time news sentiment analysis — executes perpetual trades automatically. No manual orders, no emotion, and every decision is cryptographically recorded on the blockchain.
-
----
-
-## Background
-
-Southeast Asia is one of the largest crypto markets in the world, yet the majority of retail traders still lose money due to manual, emotion-driven trading: FOMO on the way up, panic-selling on the way down. They want capital gains but lack the time, skill, or infrastructure to compete against bots and institutions.
-
-VoyagerFi's answer: **an AI agent that trades on behalf of users**, with every decision verifiable on-chain. Not a black box — every signal, reasoning step, and execution is recorded on 0G Chain and 0G Storage.
+VoyagerFi is an autonomous quant trading platform for Southeast Asia's retail crypto market. Users deposit USDC into a shared vault, select a risk profile, and the AI agent — powered by quant indicators and DeepSeek v3 reasoning via 0G Compute TEE — trades perpetuals on Hyperliquid automatically. Every decision is cryptographically anchored on 0G Chain, making the agent's behavior fully verifiable.
 
 ---
 
 ## How It Works
 
-### User Flow
-1. Open VoyagerFi → view the dashboard: live prices, agent activity, market news
-2. Go to **Trade** → select a risk profile (Conservative / Balanced / Aggressive)
-3. **Deposit USDC.e** into the vault → pool shares are issued proportionally
-4. The agent trades automatically → profit/loss is distributed proportionally to all depositors
-5. **Withdraw** at any time based on the current share value
-
-### Agent Decision Loop (every 10 seconds per pair)
 ```
-OBSERVE → THINK → ACT → LOG
+User deposits USDC (Arbitrum Vault)
+        ↓
+Agent: OBSERVE → THINK → ACT → LOG
+  OBSERVE:  Pyth Oracle prices + news sentiment
+  THINK:    RSI/MACD/Bollinger + DeepSeek v3 via 0G Compute (TEE)
+  ACT:      Execute trades on Hyperliquid (real liquidity, real fills)
+  LOG:      Decision hash → 0G Chain + full trace → 0G Storage
+        ↓
+User withdraws USDC + proportional profit
 ```
 
-1. **OBSERVE** — Fetch live prices from Pyth Oracle + pull market news from CoinTelegraph & CoinDesk RSS feeds
-2. **THINK**
-   - Quant analysis: RSI, MACD, Bollinger Bands, Moving Average → signal + strength score
-   - AI reasoning via DeepSeek on 0G Compute (TEE-verified) → macro & micro market context
-   - News sentiment: bullish/bearish keyword scoring → ±30% modifier applied to signal strength
-   - Signal combine: 40% quant + 60% AI
-3. **ACT** — If signal strength exceeds 0.3 threshold and no open position exists for that pair → call `OpenPosition` on-chain via Perpetual.sol
-4. **LOG** — Hash decision (keccak256) → persist to DB + anchor on-chain via DecisionLog.sol + upload to 0G Storage
-
-### Pool Vault Model
-- All deposits flow into a **shared pool** — not isolated per-user accounts
-- Share price = `poolBalance / totalShares`
-- User value = `shares[user] × poolBalance / totalShares`
-- Agent profit → `poolBalance` increases → all shareholders gain proportionally
-- Agent loss → `poolBalance` decreases → all shareholders bear loss proportionally (fair and transparent)
+**No manual orders. Every decision is AI-generated and on-chain verifiable.**
 
 ---
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Frontend (Next.js)                    │
-│  Dashboard · Trade · Positions · Verify (Decision Logs)  │
-│  RainbowKit + wagmi · Pyth prices fetched from browser   │
-└────────────────────┬────────────────────────────────────┘
-                     │ REST + WebSocket
-┌────────────────────▼────────────────────────────────────┐
-│                   Backend (Go / Gin)                     │
-│                                                          │
-│  Agent Loop ──► Quant Engine (RSI/MACD/BB/MA)           │
-│       │    └──► DeepSeek Client (0G Compute / TEE)      │
-│       │    └──► News Fetcher (RSS sentiment scoring)     │
-│       │    └──► Risk Manager (position sizing)           │
-│       │                                                  │
-│  Chain Bindings ──► Vault · Perpetual · PriceFeed        │
-│                └──► DecisionLog · StorageAnchor          │
-│                                                          │
-│  PostgreSQL (Supabase) ← cache/index layer only          │
-└────────────────────┬────────────────────────────────────┘
-                     │ RPC calls
-┌────────────────────▼────────────────────────────────────┐
-│                  0G Chain (Mainnet)                      │
-│                                                          │
-│  Vault.sol          → deposit / withdraw USDC.e          │
-│  Perpetual.sol      → open / close positions             │
-│  PriceFeed.sol      → Pyth price oracle                  │
-│  DecisionLog.sol    → keccak256 decision hash commit     │
-│  StorageAnchor.sol  → 0G Storage proof anchor            │
-│  AgentRegistry.sol  → agent wallet whitelist             │
-│  TradeExecutor.sol  → batch execute + log decision       │
-└─────────────────────────────────────────────────────────┘
-                     │
-┌────────────────────▼────────────────────────────────────┐
-│                   0G Storage                             │
-│  Trade logs · signals · news cache · agent state         │
-│  (verifiable, content-addressed)                         │
-└─────────────────────────────────────────────────────────┘
-```
+### Two-Layer Design
+
+| Layer | Purpose | Chain |
+|---|---|---|
+| **Vault** | User custody (deposit/withdraw USDC) | Arbitrum Sepolia |
+| **Execution** | Trade perpetuals (real liquidity) | Hyperliquid Testnet |
+| **Verifiability** | Decision hash + audit trail | 0G Chain Mainnet |
+| **AI Inference** | DeepSeek v3 via TEE | 0G Compute |
+| **Storage** | Full decision trace (verifiable) | 0G Storage |
+
+### Why Hyperliquid for Execution?
+
+Building a custom perpetuals engine requires building trust from scratch — liquidity, audit history, protocol risk. Hyperliquid is already battle-tested with billions in volume and a fully programmatic API. VoyagerFi's moat is the **AI agent + verifiability layer**, not the matching engine. We use the best available infrastructure for each layer.
+
+### Why Arbitrum for the Vault?
+
+0G Chain does not have native USDC. Hyperliquid settles in USDC from Arbitrum. Putting the vault on Arbitrum avoids cross-chain bridging complexity and lets users deposit/withdraw USDC natively with no bridge risk.
+
+### 0G Integration (mandatory components)
+
+- **0G Compute** — DeepSeek v3 (`deepseek-chat-v3-0324`) provides AI reasoning for every trade signal via TEE. This is the verifiable AI inference layer.
+- **0G Storage** — Full decision trace (indicators, reasoning, signal strength, price, timestamp) uploaded and content-addressed for every decision.
+- **0G Chain Mainnet** — `DecisionLog.sol` anchors decision hashes on-chain. `StorageAnchor.sol` links on-chain records to 0G Storage root hashes.
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
+| Component | Technology |
 |---|---|
-| Frontend | Next.js 15, React 19, Tailwind CSS, RainbowKit, wagmi, TanStack Query |
-| Backend | Go 1.24, Gin, GORM, WebSocket |
-| Smart Contracts | Solidity 0.8.24, Foundry |
-| Database | Supabase PostgreSQL (cache layer) |
-| Oracle | Pyth Network (Hermes REST — ETH/USD, BTC/USD, SOL/USD, ARB/USD, BNB/USD) |
-| AI | DeepSeek v3 via 0G Compute (TEE-verified inference) |
-| Storage | 0G Storage (verifiable data layer) |
-| Chain | 0G Chain Mainnet |
-
----
-
-## 0G Integration
-
-VoyagerFi uses three core components from the 0G ecosystem:
-
-### 1. 0G Chain
-All smart contracts are deployed on 0G Chain. Every trade, deposit, withdrawal, and decision hash is permanently recorded on-chain. No centralized server can fabricate or alter trading performance.
-
-### 2. 0G Compute — DeepSeek TEE
-Agent reasoning runs via the 0G Compute marketplace using DeepSeek v3 inside a Trusted Execution Environment (TEE). This means AI inference is verifiably unmanipulated — even by VoyagerFi operators themselves.
-
-### 3. 0G Storage
-Every decision record — quant signals, AI reasoning, executed action, news context — is uploaded to 0G Storage as a verifiable blob. `StorageAnchor.sol` stores the root hash on-chain, allowing anyone to verify that no data has been tampered with.
+| Frontend | Next.js 15 + React 19 + TailwindCSS + shadcn/ui |
+| Wallet | RainbowKit + wagmi |
+| Backend | Go 1.25 + Gin + GORM |
+| Database | Supabase PostgreSQL (cache/index only) |
+| Quant Engine | Custom RSI + MACD + Bollinger + MA |
+| AI | DeepSeek v3 via 0G Compute (TEE) |
+| Oracle | Pyth Network (Hermes REST) |
+| Execution | Hyperliquid Testnet (perpetuals) |
+| Vault | Arbitrum Sepolia (USDC) |
+| Verifiability | 0G Chain Mainnet + 0G Storage |
+| Smart Contracts | Solidity 0.8.24 + Foundry |
 
 ---
 
@@ -124,82 +74,63 @@ Every decision record — quant signals, AI reasoning, executed action, news con
 
 **0% management fee. 20% performance fee on net realized profit only.**
 
-- Fee is only collected when users profit — no fee on losses
-- **High-water mark rule**: users must recover to their previous equity peak before the performance fee reactivates — a standard hedge fund practice that strongly aligns incentives
-- VoyagerFi only earns when users earn
+- Fee only activates when users profit — aligned incentives
+- High-water mark rule: users must recover to previous peak before fee applies again
+- Standard hedge fund practice, fully trustless via smart contract
 
-### Revenue Streams
+**Why this works:**
+- Retail SEA has crypto but lacks trading skill/time
+- VoyagerFi = Robinhood of on-chain algo trading: AI-managed, TEE-verified, 0% management fee
 
-| Segment | Model |
-|---|---|
-| B2C (Retail) | 20% performance fee on net profit per epoch |
-| B2B2C (White-label) | Revenue split: partner 5%, VoyagerFi 15% |
-| B2B (Institutional) | AUM-based, $50k+ minimum, custom risk params via API |
-
-### Competitive Moat
-- TEE-verified AI inference — competitors cannot fake verifiable performance
-- Fully on-chain fee collection — fully auditable and trustless
-- AUM network effect → more capital → richer data → smarter agent decisions
+**B2B2C Roadmap:**
+- B2C: retail users deposit → bot trades → 20% on profit
+- B2B2C: exchanges/wallets white-label VoyagerFi engine
+- Institutional: custom risk params, $50k+ minimum
 
 ---
 
-## Trading Pairs & Risk Profiles
+## Agent Loop
 
-| Pair | Status |
-|---|---|
-| ETH/USD | Active |
-| BTC/USD | Active |
-| SOL/USD | Active |
-| ARB/USD | Active |
-| BNB/USD | Active |
+Every **10 seconds**, for each trading pair (ETH, BTC, SOL, ARB, BNB):
 
-**Risk Profiles:**
-- **Conservative** — Coming Soon
-- **Balanced** — Active (leverage 8–15x, automatically adjusted by the risk manager)
-- **Aggressive** — Coming Soon
+1. **OBSERVE**: Fetch live price from Pyth, macro/micro context, news sentiment
+2. **THINK**: Run quant analysis (RSI, MACD, Bollinger, MA) + DeepSeek v3 reasoning
+3. **COMBINE**: 40% quant signal + 60% AI signal = combined direction + strength
+4. **ACT**: If no open position + signal strength > 0.3 → open Hyperliquid position
+5. **MANAGE**: Close position if take profit (≥3%) or stop loss (≤-5%)
+6. **LOG**: Hash decision → 0G Chain + upload trace → 0G Storage
 
----
-
-## Roadmap
-
-| Quarter | Milestone |
-|---|---|
-| Q2 2025 — Hackathon | MVP: single vault, ETH/BTC, basic agent, verifiable on 0G |
-| Q3 2025 | Multi-pair agent, performance fee smart contract, security audit |
-| Q4 2025 | B2C public launch, referral program, mobile PWA |
-| Q1 2026 | B2B API (white-label), per-pair exclusion/focus config |
-| Q2 2026 | B2B2C partnerships, institutional tier |
+### Risk Controls
+- Signal threshold: 0.3 (weak signals rejected)
+- Take profit: 3%
+- Stop loss: 5%
+- Leverage: 8–15x (balanced profile)
+- Max drawdown: 20%
 
 ---
 
 ## Smart Contracts
 
-Deployed on **0G Chain Mainnet**:
-
-| Contract | Address |
+### Arbitrum Sepolia (Vault)
+| Contract | Purpose |
 |---|---|
-| Vault | TBD |
-| Perpetual | TBD |
-| PriceFeed | TBD |
-| DecisionLog | TBD |
-| StorageAnchor | TBD |
-| AgentRegistry | TBD |
-| TradeExecutor | TBD |
+| `Vault.sol` | USDC custody, share-based NAV, deposit/withdraw |
 
----
+### 0G Chain Mainnet (Verifiability)
+| Contract | Purpose |
+|---|---|
+| `AgentRegistry.sol` | Whitelist of authorized agent wallets |
+| `DecisionLog.sol` | On-chain decision hash anchor |
+| `StorageAnchor.sol` | Links on-chain records to 0G Storage root hashes |
 
-## Project Structure
+### Deployment
 
-```
-voyagerfi/
-├── frontend/             # Next.js app — dashboard, trade, positions, verify
-├── backend/              # Go agent loop + REST API + WebSocket
-│   ├── service/agent/    # Agent loop, risk manager, decision hashing
-│   ├── service/quant/    # RSI, MACD, Bollinger Bands, MA engine
-│   ├── service/chain/    # On-chain bindings (Vault, Perpetual, etc.)
-│   ├── service/external/ # DeepSeek, Pyth, 0G Storage, news RSS
-│   └── http/             # Gin HTTP handlers + WebSocket hub
-└── smart-contracts/      # Foundry — Solidity contracts, tests, deploy script
+```bash
+# Deploy Vault on Arbitrum Sepolia
+forge script script/DeployArbitrum.s.sol --rpc-url $ARBITRUM_RPC_URL --broadcast
+
+# Deploy verifiability contracts on 0G Chain Mainnet
+forge script script/DeployOG.s.sol --rpc-url https://evmrpc.0g.ai --broadcast
 ```
 
 ---
@@ -209,13 +140,15 @@ voyagerfi/
 ### Backend
 ```bash
 cd backend
-cp .env.example .env   # fill in all env vars
-CGO_ENABLED=0 go run main.go
+cp .env.example .env
+# Fill in AGENT_PRIVATE_KEY, DEEPSEEK_API_KEY, DEEPSEEK_URL, contract addresses
+go run main.go
 ```
 
 ### Frontend
 ```bash
 cd frontend
+cp .env.example .env.local
 npm install
 npm run dev
 ```
@@ -225,17 +158,40 @@ npm run dev
 cd smart-contracts
 forge build
 forge test
-forge script script/Deploy.s.sol:Deploy \
-  --rpc-url $OG_RPC_URL \
-  --broadcast \
-  --legacy \
-  --gas-price 3000000000
 ```
 
 ---
 
-## Links
+## Project Structure
 
-- **Live App**: https://voyagerfi-app.vercel.app
-- **HackQuest**: https://hackquest.io/projects/setup/52f751f9-17c0-4205-9ee0-32dbbb34e292
-- **Hackathon**: 0G APAC Hackathon — Track 2: Agentic Trading Arena (Verifiable Finance)
+```
+voyagerfi/
+├── backend/
+│   ├── service/
+│   │   ├── agent/          # Agent loop: OBSERVE → THINK → ACT → LOG
+│   │   ├── quant/          # RSI, MACD, Bollinger, MA
+│   │   ├── external/
+│   │   │   ├── hyperliquid/ # Execution layer (trade placement + signing)
+│   │   │   ├── deepseek/    # 0G Compute AI inference
+│   │   │   ├── pyth/        # Price oracle
+│   │   │   ├── storage/     # 0G Storage upload
+│   │   │   └── news/        # News sentiment (RSS + CoinGecko)
+│   │   └── chain/           # 0G Chain bindings (DecisionLog, StorageAnchor)
+│   └── http/                # Gin REST API + WebSocket
+├── frontend/                # Next.js dashboard
+└── smart-contracts/         # Foundry (Vault + verifiability)
+```
+
+---
+
+## Trading Pairs
+ETH/USD · BTC/USD · SOL/USD · ARB/USD · BNB/USD
+
+Risk profiles: **Balanced** (active) · Conservative (coming soon) · Aggressive (coming soon)
+
+---
+
+## Hackathon
+
+**0G APAC Hackathon — Track 2: Agentic Trading Arena (Verifiable Finance)**
+Deadline: May 9, 2026 23:59 UTC+8

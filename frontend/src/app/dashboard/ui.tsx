@@ -1,17 +1,19 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
-import { AppLayout } from "@/components/layout/app-layout";
+import { useState } from "react";
+import { useAccount } from "wagmi";
 import { PriceSparkline } from "@/components/charts/price-sparkline";
-import { cn } from "@/lib/utils";
-import { fmtPrice, fmtAgo } from "@/lib/format";
-import { ETH_PTS_FALLBACK, BTC_PTS_FALLBACK, buildTradeRows } from "./helpers";
-import { usePrices } from "@/hooks/usePrices";
+import { AppLayout } from "@/components/layout/app-layout";
 import { useAgentStatus } from "@/hooks/useAgentStatus";
 import { useDashboard } from "@/hooks/useDashboard";
 import { useNews } from "@/hooks/useNews";
+import { usePrices } from "@/hooks/usePrices";
+import { useVaultBalance } from "@/hooks/useVaultBalance";
+import { fmtAgo, fmtPrice } from "@/lib/format";
 import type { NewsArticle } from "@/lib/types";
+import { cn } from "@/lib/utils";
+import { BTC_PTS_FALLBACK, buildTradeRows, ETH_PTS_FALLBACK } from "./helpers";
 
 /* ── Stat bar item ── */
 function StatItem({
@@ -123,10 +125,12 @@ function MarketCard({
 }
 
 export function DashboardUI() {
+  const { address } = useAccount();
   const { data: prices } = usePrices();
   const { data: agentStatus } = useAgentStatus();
   const { data: dashboard } = useDashboard();
   const { data: newsArticles = [] } = useNews();
+  const vault = useVaultBalance(address);
   const [showAllNews, setShowAllNews] = useState(false);
 
   const ethPrice = prices?.eth?.price ?? 0;
@@ -139,9 +143,44 @@ export function DashboardUI() {
   const openPositions = dashboard?.open_positions ?? [];
   const tradeRows = openPositions.length > 0 ? buildTradeRows(openPositions) : [];
 
+  const formatUsdcAmount = (value: string | null) =>
+    value != null ? `$${parseFloat(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—";
+
   return (
     <AppLayout>
       <div className="flex flex-col gap-0 -mt-1">
+
+        {/* ── Vault stats ── */}
+        <div className="grid grid-cols-2 md:grid-cols-5 border border-border rounded-2xl overflow-hidden bg-card mb-4">
+          <StatItem
+            label="Pool AUM"
+            value={formatUsdcAmount(vault.poolBalance)}
+            sub={vault.deployedAmount && parseFloat(vault.deployedAmount) > 0
+              ? `$${parseFloat(vault.deployedAmount).toFixed(2)} deployed`
+              : "fully liquid"}
+          />
+          <StatItem
+            label="Your Value"
+            value={address ? formatUsdcAmount(vault.userValue) : "—"}
+            sub={vault.userSharePct != null ? `${vault.userSharePct.toFixed(2)}% of pool` : undefined}
+          />
+          <StatItem
+            label="High-Water Mark"
+            value={formatUsdcAmount(vault.highWaterMark)}
+            sub="pool peak NAV"
+          />
+          <StatItem
+            label="Mgmt Fee Accrued"
+            value={formatUsdcAmount(vault.pendingMgmtFee)}
+            sub="2% AUM / yr"
+            positive={vault.pendingMgmtFee != null && parseFloat(vault.pendingMgmtFee) > 0}
+          />
+          <div className="flex flex-col gap-2 px-5 py-4 justify-center">
+            <Link href="/trade" className="mt-1 inline-block rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors text-center">
+              Deposit / Withdraw
+            </Link>
+          </div>
+        </div>
 
         {/* ── Top stat bar ── */}
         <div className="grid grid-cols-2 md:grid-cols-4 border border-border rounded-2xl overflow-hidden bg-card mb-5">
@@ -175,10 +214,10 @@ export function DashboardUI() {
         {/* ── Market cards (clickable) ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
           <MarketCard
-            href="/trade/ETH-USD"
+            href="/trade/ETH-USDC"
             short="ETH"
             name="Ethereum"
-            pair="ETH / USD"
+            pair="ETH / USDC"
             iconBg="#ECF0FD"
             iconFg="#3B5BC4"
             price={ethPrice}
@@ -186,10 +225,10 @@ export function DashboardUI() {
             fallback={ETH_PTS_FALLBACK}
           />
           <MarketCard
-            href="/trade/BTC-USD"
+            href="/trade/WBTC-USDC"
             short="BTC"
             name="Bitcoin"
-            pair="BTC / USD"
+            pair="WBTC / USDC"
             iconBg="#FDF3E7"
             iconFg="#C4761A"
             price={btcPrice}
@@ -224,12 +263,12 @@ export function DashboardUI() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
-                    {["Pair", "Direction", "Size", "Entry Price", "P&L", "Time"].map((h, i) => (
+                    {["Pair", "Size", "Entry Price", "P&L", "Time"].map((h, i) => (
                       <th
                         key={h}
                         className={cn(
                           "text-[10px] text-muted-foreground uppercase tracking-widest font-medium px-5 py-2.5 text-left",
-                          i >= 4 && "text-right"
+                          i >= 3 && "text-right"
                         )}
                       >
                         {h}
@@ -241,18 +280,6 @@ export function DashboardUI() {
                   {tradeRows.map((t, i) => (
                     <tr key={i} className="border-b border-border last:border-b-0 hover:bg-accent/40 transition-colors">
                       <td className="px-5 py-3 text-sm font-mono font-semibold">{t.pair}</td>
-                      <td className="px-5 py-3">
-                        <span
-                          className={cn(
-                            "inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-md",
-                            t.side === "Buy"
-                              ? "bg-positive/10 text-positive"
-                              : "bg-negative/10 text-negative"
-                          )}
-                        >
-                          {t.side}
-                        </span>
-                      </td>
                       <td className="px-5 py-3 text-sm font-mono text-muted-foreground">{t.size}</td>
                       <td className="px-5 py-3 text-sm font-mono text-muted-foreground">{t.entry}</td>
                       <td className="px-5 py-3 text-right">

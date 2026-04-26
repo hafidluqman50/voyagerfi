@@ -35,10 +35,9 @@ export interface Position {
   pair: string;
   direction: "long" | "short";
   size: string;
-  leverage: number;
+  margin: string;
   entry_price: string;
   exit_price: string;
-  margin: string;
   pnl: string;
   is_open: boolean;
   tx_hash: string;

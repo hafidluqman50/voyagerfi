@@ -1,12 +1,12 @@
 import { getDefaultConfig } from '@rainbow-me/rainbowkit';
 import { http } from 'viem';
-import { mantleSepoliaTestnet, sepolia, zeroGMainnet } from 'wagmi/chains'
+import { arbitrumSepolia } from 'wagmi/chains';
 
 export const config = getDefaultConfig({
-  appName: 'LendingRWA',
+  appName: 'VoyagerFi',
   projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID!,
-  chains: [zeroGMainnet],
+  chains: [arbitrumSepolia],
   transports: {
-      [zeroGMainnet.id]: http(), 
-    },
+    [arbitrumSepolia.id]: http(),
+  },
 });

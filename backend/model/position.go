@@ -15,7 +15,7 @@ type Position struct {
 	Pair       string     `json:"pair" gorm:"index"`
 	Direction  Direction  `json:"direction"`
 	Size       string     `json:"size"`
-	Leverage   uint       `json:"leverage"`
+	Leverage   uint       `json:"-"`
 	EntryPrice string     `json:"entry_price"`
 	ExitPrice  string     `json:"exit_price"`
 	Margin     string     `json:"margin"`

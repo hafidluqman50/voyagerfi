@@ -6,8 +6,10 @@ import {
   AreaChart, Area, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
+import { useAccount, useWaitForTransactionReceipt, useWriteContract, useReadContract } from "wagmi";
 import { parseUnits } from "viem";
+import { useDeposit } from "@/hooks/useDeposit";
+import { useWithdraw } from "@/hooks/useWithdraw";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -25,22 +27,21 @@ import { fmtPrice } from "@/lib/format";
 const USDC_DECIMALS = 6;
 
 const PAIRS: { symbol: string; label: string; ticker: BinanceSymbol }[] = [
-  { symbol: "ETH/USD", label: "Ethereum", ticker: "ETHUSDT" },
-  { symbol: "SOL/USD", label: "Solana",   ticker: "SOLUSDT" },
-  { symbol: "ARB/USD", label: "Arbitrum", ticker: "ARBUSDT" },
-  { symbol: "BNB/USD", label: "BNB",      ticker: "BNBUSDT" },
+  { symbol: "ETH/USDC",  label: "Ethereum",        ticker: "ETHUSDT" },
+  { symbol: "WBTC/USDC", label: "Wrapped Bitcoin",  ticker: "BTCUSDT" },
+  { symbol: "ARB/USDC",  label: "Arbitrum",         ticker: "ARBUSDT" },
 ];
 
 const RISK_PROFILES = [
-  { id: "conservative", label: "Conservative", leverage: 2,  sl: 3,  tp: 6  },
-  { id: "balanced",     label: "Balanced",     leverage: 5,  sl: 5,  tp: 10 },
-  { id: "aggressive",   label: "Aggressive",   leverage: 10, sl: 8,  tp: 20 },
+  { id: "conservative", label: "Conservative", sl: 3,  tp: 6  },
+  { id: "balanced",     label: "Balanced",     sl: 5,  tp: 10 },
+  { id: "aggressive",   label: "Aggressive",   sl: 8,  tp: 20 },
 ] as const;
 
 function fmtUsdc(v: string | null): string {
   if (!v) return "—";
   const n = parseFloat(v);
-  return Number.isFinite(n) ? `${n.toFixed(2)} USDC.e` : "—";
+  return Number.isFinite(n) ? `${n.toFixed(2)} USDC` : "—";
 }
 
 function fmtTime(t: number): string {
@@ -98,7 +99,7 @@ function BtcLiveChartCard() {
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
             <span className="w-1.5 h-1.5 rounded-full bg-positive animate-pulse-dot" />
-            <span className="text-xs text-muted-foreground">BTC / USD · live</span>
+            <span className="text-xs text-muted-foreground">WBTC / USDC · live</span>
           </div>
           <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground group-hover:text-primary transition-colors">
             <path d="M6 3l5 5-5 5" />
@@ -162,42 +163,39 @@ function DepositDialog() {
   const [amt, setAmt] = useState("");
   const [open, setOpen] = useState(false);
   const { address } = useAccount();
+  const { mutate: deposit, isPending, isSuccess, error, reset } = useDeposit();
   const valid = !!amt && parseFloat(amt) > 0;
-  const amountWei = valid ? parseUnits(amt, USDC_DECIMALS) : BigInt(0);
 
-  const { data: allowance = BigInt(0), refetch: refetchAllowance } = useReadContract({
-    address: USDC_ADDRESS, abi: USDC_ABI, functionName: "allowance",
-    args: [address!, VAULT_ADDRESS], query: { enabled: !!address },
+  const { data: walletBalance = BigInt(0) } = useReadContract({
+    address: USDC_ADDRESS, abi: USDC_ABI, functionName: "balanceOf",
+    args: [address!], query: { enabled: !!address },
   });
-
-  const needsApprove = valid && (allowance as bigint) < amountWei;
-  const { writeContract: approve, data: approveTx, isPending: isApproving, reset: resetApprove } = useWriteContract();
-  const { isLoading: isApproveConfirming, isSuccess: isApproved } = useWaitForTransactionReceipt({ hash: approveTx, onReplaced: () => refetchAllowance() });
-  const { writeContract: deposit, data: depositTx, isPending: isDepositing, reset: resetDeposit } = useWriteContract();
-  const { isLoading: isDepositConfirming, isSuccess: isDepositDone } = useWaitForTransactionReceipt({ hash: depositTx });
-
-  const isBusy = isApproving || isApproveConfirming || isDepositing || isDepositConfirming;
+  const walletBalanceUsdc = (Number(walletBalance as bigint) / 1e6).toFixed(2);
 
   return (
-    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setAmt(""); resetApprove(); resetDeposit(); } }}>
+    <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setAmt(""); reset(); } }}>
       <DialogTrigger render={<button className="px-5 h-9 rounded-xl bg-primary text-primary-foreground font-semibold text-sm hover:bg-primary/90 transition-colors">Deposit</button>} />
       <DialogContent className="sm:max-w-sm">
-        <DialogHeader><DialogTitle>Deposit USDC.e</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Deposit USDC</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-4 py-1">
-          <p className="text-xs text-muted-foreground">Your USDC.e will be managed by the AI agent on 0G Chain.</p>
+          <div className="bg-secondary/50 rounded-xl px-4 py-3 flex justify-between items-center">
+            <span className="text-xs text-muted-foreground">Wallet balance</span>
+            <span className="text-sm font-mono font-semibold">{walletBalanceUsdc} USDC</span>
+          </div>
           <div>
-            <label className="text-xs text-muted-foreground mb-1.5 block">Amount (USDC.e)</label>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="text-xs text-muted-foreground">Amount (USDC)</label>
+              <button onClick={() => setAmt(walletBalanceUsdc)} className="text-xs text-primary font-medium">Max</button>
+            </div>
             <Input value={amt} onChange={e => setAmt(e.target.value)} placeholder="0.00" className="font-mono h-11" type="number" min="0" />
           </div>
-          {isDepositDone ? (
+          <p className="text-xs text-muted-foreground">Managed by AI agent on Arbitrum · no lock-up period · 0.1% exit fee on withdraw</p>
+          {error && <p className="text-xs text-negative text-center">{(error as Error).message}</p>}
+          {isSuccess ? (
             <div className="bg-positive/10 text-positive rounded-xl px-4 py-3 text-sm font-medium text-center">Deposit confirmed ✓</div>
-          ) : needsApprove || (!isApproved && !allowance) ? (
-            <Button disabled={!valid || isBusy} onClick={() => approve({ address: USDC_ADDRESS, abi: USDC_ABI, functionName: "approve", args: [VAULT_ADDRESS, amountWei] })} className="w-full h-10 rounded-xl">
-              {isApproving ? "Confirm in wallet…" : isApproveConfirming ? "Approving…" : "Approve USDC.e"}
-            </Button>
           ) : (
-            <Button disabled={!valid || isBusy} onClick={() => deposit({ address: VAULT_ADDRESS, abi: VAULT_ABI, functionName: "deposit", args: [amountWei] })} className="w-full h-10 rounded-xl">
-              {isDepositing ? "Confirm in wallet…" : isDepositConfirming ? "Confirming…" : "Deposit USDC.e"}
+            <Button disabled={!valid || isPending} onClick={() => deposit(amt)} className="w-full h-10 rounded-xl">
+              {isPending ? "Processing…" : "Deposit USDC"}
             </Button>
           )}
         </div>
@@ -208,33 +206,60 @@ function DepositDialog() {
 }
 
 /* ── Withdraw Dialog ── */
-function WithdrawDialog({ available }: { available: string | null }) {
+function WithdrawDialog({ available, totalValue }: { available: string | null; totalValue: string | null }) {
   const [amt, setAmt] = useState("");
   const [open, setOpen] = useState(false);
   const maxUsdc = available ?? "0";
-  const valid = !!amt && parseFloat(amt) > 0 && parseFloat(amt) <= parseFloat(maxUsdc);
+  const amtNum = parseFloat(amt) || 0;
+  const valid = !!amt && amtNum > 0 && amtNum <= parseFloat(maxUsdc);
+  const exitFee = valid ? amtNum * 0.001 : 0;
+  const youReceive = valid ? amtNum - exitFee : 0;
+  const deployedLocked = totalValue != null && available != null
+    && parseFloat(totalValue) > parseFloat(available)
+    && parseFloat(totalValue) > 0;
 
-  const { writeContract, data: txHash, isPending, reset } = useWriteContract();
-  const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash: txHash });
+  const { mutate: withdraw, isPending, isSuccess, error, reset } = useWithdraw();
 
   return (
     <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setAmt(""); reset(); } }}>
       <DialogTrigger render={<button className="px-5 h-9 rounded-xl border border-border text-foreground font-semibold text-sm hover:bg-secondary transition-colors">Withdraw</button>} />
       <DialogContent className="sm:max-w-sm">
-        <DialogHeader><DialogTitle>Withdraw USDC.e</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle>Withdraw USDC</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-4 py-1">
-          <div className="relative">
-            <Input value={amt} onChange={e => setAmt(e.target.value)} placeholder="0.00" className="font-mono h-11 pr-16" type="number" min="0" max={maxUsdc} />
-            <button onClick={() => setAmt(maxUsdc)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-primary font-medium">Max</button>
+          <div className="bg-secondary/50 rounded-xl px-4 py-3 flex justify-between items-center">
+            <span className="text-xs text-muted-foreground">Your vault value</span>
+            <span className="text-sm font-mono font-semibold">{fmtUsdc(totalValue)}</span>
           </div>
-          <p className="text-xs text-muted-foreground">Available: {fmtUsdc(available)}</p>
+          {deployedLocked && (
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-2.5 text-xs text-amber-500">
+              Part of your funds are in active trades. Only liquid portion is withdrawable now.
+            </div>
+          )}
+          <div>
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="text-xs text-muted-foreground">Amount (USDC)</label>
+              <button onClick={() => setAmt(maxUsdc)} className="text-xs text-primary font-medium">Max · {fmtUsdc(available)}</button>
+            </div>
+            <Input value={amt} onChange={e => setAmt(e.target.value)} placeholder="0.00" className="font-mono h-11" type="number" min="0" max={maxUsdc} />
+          </div>
+          {valid && (
+            <div className="bg-secondary/50 rounded-xl px-4 py-3 flex flex-col gap-1.5 text-xs">
+              <div className="flex justify-between text-muted-foreground">
+                <span>Exit fee (0.1%)</span>
+                <span className="font-mono">−{exitFee.toFixed(4)} USDC</span>
+              </div>
+              <div className="flex justify-between font-semibold border-t border-border pt-1.5 mt-0.5">
+                <span>You receive</span>
+                <span className="font-mono">{youReceive.toFixed(4)} USDC</span>
+              </div>
+            </div>
+          )}
+          {error && <p className="text-xs text-negative text-center">{(error as Error).message}</p>}
           {isSuccess ? (
             <div className="bg-positive/10 text-positive rounded-xl px-4 py-3 text-sm font-medium text-center">Withdrawal confirmed ✓</div>
           ) : (
-            <Button disabled={!valid || isPending || isConfirming}
-              onClick={() => writeContract({ address: VAULT_ADDRESS, abi: VAULT_ABI, functionName: "withdraw", args: [parseUnits(amt, USDC_DECIMALS)] })}
-              className="w-full h-10 rounded-xl">
-              {isPending ? "Confirm in wallet…" : isConfirming ? "Confirming…" : "Withdraw USDC.e"}
+            <Button disabled={!valid || isPending} onClick={() => withdraw(amt)} className="w-full h-10 rounded-xl">
+              {isPending ? "Processing…" : "Withdraw USDC"}
             </Button>
           )}
         </div>
@@ -247,7 +272,7 @@ function WithdrawDialog({ available }: { available: string | null }) {
 /* ── My Portfolio card ── */
 function PortfolioCard() {
   const { address } = useAccount();
-  const { total, available, isLoading } = useVaultBalance(address);
+  const { userValue: total, liquidBalance: available, isLoading } = useVaultBalance(address);
 
   return (
     <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
@@ -256,13 +281,13 @@ function PortfolioCard() {
           <p className="text-sm font-semibold">My Portfolio</p>
           {address && (
             <p className={cn("text-xs font-mono mt-0.5", isLoading ? "text-muted-foreground animate-pulse" : "text-positive")}>
-              {isLoading ? "Loading…" : `${parseFloat(total ?? "0").toFixed(2)} USDC.e deposited`}
+              {isLoading ? "Loading…" : `${parseFloat(total ?? "0").toFixed(2)} USDC deposited`}
             </p>
           )}
         </div>
         {address ? (
           <div className="flex items-center gap-2">
-            <WithdrawDialog available={available} />
+            <WithdrawDialog available={available} totalValue={total} />
             <DepositDialog />
           </div>
         ) : (
@@ -287,7 +312,7 @@ function PortfolioCard() {
               )}
             >
               <span className="font-semibold">{p.label}</span>
-              <span className="text-[10px] text-muted-foreground">{p.leverage}× · {p.sl}% SL</span>
+              <span className="text-[10px] text-muted-foreground">{p.sl}% SL · {p.tp}% TP</span>
             </div>
           ))}
         </div>

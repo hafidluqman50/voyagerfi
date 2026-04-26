@@ -17,7 +17,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "VoyagerFi",
-  description: "Autonomous Quant Trading Agent on 0G Chain",
+  description: "AI-powered autonomous trading agent. Deposit, sleep, profit.",
 };
 
 export default function RootLayout({

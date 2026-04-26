@@ -16,4 +16,5 @@ library Errors {
     error AgentNotRegistered();
     error MaxAgentsReached();
     error TransferFailed();
+    error BelowHighWaterMark();
 }

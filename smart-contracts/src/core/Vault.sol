@@ -2,132 +2,187 @@
 pragma solidity ^0.8.24;
 
 import {IVault} from "../interfaces/IVault.sol";
+import {IERC20} from "../interfaces/IERC20.sol";
 import {Errors} from "../libraries/Errors.sol";
 
-interface IERC20 {
-    function transferFrom(address from, address to, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
-}
-
-// Pool vault: all user deposits go into a shared pool.
-// The agent trades from the pool. Each user's profit/loss is
-// proportional to their share of the pool.
+// Custody + trading vault on Arbitrum (USDC native).
 //
-// Share price = poolBalance / totalShares
-// User value  = sharesOf(user) * poolBalance / totalShares
+// Fee structure (profit-first):
+//   - 2%  management fee / year  — accrued continuously, pulled by owner anytime
+//   - 20% performance fee        — pulled by owner per epoch on realized profit
+//   - 0.1% withdrawal fee        — deducted automatically on every user withdraw
+//
+// Slippage capture: agent controls settle() amount. Any positive slippage
+// from Uniswap V3 swaps stays in the agent wallet — not returned to vault.
+//
+// poolBalance() = usdc.balanceOf(this) + _deployedAmount
+// Share price   = poolBalance() / totalShares
+// User value    = sharesOf(user) * poolBalance() / totalShares
 contract Vault is IVault {
-    address public owner;
-    address public perpetual;
-    IERC20 public usdc;
+    uint256 public constant MANAGEMENT_FEE_BPS  = 200;   // 2.00% per year
+    uint256 public constant PERFORMANCE_FEE_BPS = 2000;  // 20.00% of profit
+    uint256 public constant WITHDRAWAL_FEE_BPS  = 10;    // 0.10% on withdraw
+    uint256 public constant BPS_BASE            = 10_000;
+    uint256 public constant SECONDS_PER_YEAR    = 365 days;
 
-    // Shares represent proportional ownership of the pool.
-    // On first deposit 1 USDC.e = 1 share (1e6 precision).
+    address public owner;
+    address public operator;     // agent wallet — calls allocate/settle
+    address public feeCollector; // treasury — receives all fees
+    IERC20  public usdc;
+
     mapping(address => uint256) private _shares;
     uint256 private _totalShares;
+    uint256 private _deployedAmount; // USDC currently held by agent for active trades
 
-    // Pool accounting
-    uint256 private _poolBalance;  // tracked NAV (grows with profit, shrinks with loss)
-    uint256 private _poolLocked;   // margin currently locked in open positions
-    uint256 private _houseBuffer;  // deployer-provided USDC.e buffer to cover virtual PnL payouts
+    uint256 public lastFeeCollection;
+    uint256 public highWaterMark;
 
     modifier onlyOwner() {
         if (msg.sender != owner) revert Errors.Unauthorized();
         _;
     }
 
-    modifier onlyPerpetual() {
-        if (msg.sender != perpetual) revert Errors.Unauthorized();
+    modifier onlyOperator() {
+        if (msg.sender != operator) revert Errors.Unauthorized();
         _;
     }
 
-    constructor(address _usdc) {
-        owner = msg.sender;
-        usdc = IERC20(_usdc);
+    constructor(address _usdc, address _feeCollector, address _operator) {
+        owner             = msg.sender;
+        feeCollector      = _feeCollector;
+        operator          = _operator;
+        usdc              = IERC20(_usdc);
+        lastFeeCollection = block.timestamp;
     }
 
-    // Deployer seeds house buffer — no shares minted, purely covers virtual PnL payouts
-    function depositHouse(uint256 amount) external onlyOwner {
-        if (amount == 0) revert Errors.ZeroAmount();
-        if (!usdc.transferFrom(msg.sender, address(this), amount)) revert Errors.TransferFailed();
-        _houseBuffer += amount;
+    function setOperator(address newOperator) external onlyOwner {
+        if (newOperator == address(0)) revert Errors.ZeroAddress();
+        operator = newOperator;
     }
 
-    function withdrawHouse(uint256 amount) external onlyOwner {
-        if (amount > _houseBuffer) revert Errors.InsufficientBalance();
-        _houseBuffer -= amount;
-        if (!usdc.transfer(msg.sender, amount)) revert Errors.TransferFailed();
-    }
-
-    function houseBuffer() external view returns (uint256) { return _houseBuffer; }
-
-    function setPerpetual(address _perpetual) external onlyOwner {
-        if (_perpetual == address(0)) revert Errors.ZeroAddress();
-        perpetual = _perpetual;
-    }
-
-    // ── User deposit → mint shares proportional to current share price ──
+    // ── User deposit → mint shares proportional to current pool ──────────────
     function deposit(uint256 amount) external {
         if (amount == 0) revert Errors.ZeroAmount();
+        uint256 balance = poolBalance();
         if (!usdc.transferFrom(msg.sender, address(this), amount)) revert Errors.TransferFailed();
 
         uint256 newShares;
-        if (_totalShares == 0 || _poolBalance == 0) {
-            newShares = amount; // 1:1 on first deposit
+        if (_totalShares == 0 || balance == 0) {
+            newShares = amount;
         } else {
-            newShares = (amount * _totalShares) / _poolBalance;
+            newShares = (amount * _totalShares) / balance;
         }
 
         _shares[msg.sender] += newShares;
-        _totalShares += newShares;
-        _poolBalance += amount;
+        _totalShares        += newShares;
 
         emit Deposited(msg.sender, amount, newShares);
     }
 
-    // ── User withdraw → burn shares, receive proportional USDC.e ──
+    // ── User withdraw → burn shares, 0.1% fee auto-deducted ──────────────────
     function withdraw(uint256 amount) external {
         if (amount == 0) revert Errors.ZeroAmount();
-        uint256 uv = userValue(msg.sender);
-        if (uv < amount) revert Errors.InsufficientBalance();
-        if (poolAvailable() < amount) revert Errors.InsufficientBalance();
+        if (userValue(msg.sender) < amount) revert Errors.InsufficientBalance();
+        if (usdc.balanceOf(address(this)) < amount) revert Errors.InsufficientBalance();
 
-        uint256 burnShares = (amount * _totalShares) / _poolBalance;
+        // 0.1% withdrawal fee — straight to feeCollector
+        uint256 fee         = (amount * WITHDRAWAL_FEE_BPS) / BPS_BASE;
+        uint256 userReceive = amount - fee;
+
+        uint256 balance  = poolBalance();
+        uint256 burnShares = (amount * _totalShares) / balance;
         if (burnShares > _shares[msg.sender]) burnShares = _shares[msg.sender];
 
         _shares[msg.sender] -= burnShares;
-        _totalShares -= burnShares;
-        _poolBalance -= amount;
+        _totalShares        -= burnShares;
 
-        if (!usdc.transfer(msg.sender, amount)) revert Errors.TransferFailed();
-        emit Withdrawn(msg.sender, amount, burnShares);
-    }
-
-    // ── Called by Perpetual when opening a position ──
-    function lockPoolMargin(uint256 amount) external onlyPerpetual {
-        if (poolAvailable() < amount) revert Errors.InsufficientBalance();
-        _poolLocked += amount;
-        emit PoolMarginLocked(amount);
-    }
-
-    // ── Called by Perpetual when closing a position ──
-    function releasePoolMargin(uint256 amount) external onlyPerpetual {
-        if (amount > _poolLocked) amount = _poolLocked;
-        _poolLocked -= amount;
-        emit PoolMarginReleased(amount);
-    }
-
-    // ── PnL settlement: grows or shrinks the pool for all shareholders ──
-    function settlePoolProfit(int256 pnl) external onlyPerpetual {
-        if (pnl > 0) {
-            _poolBalance += uint256(pnl);
-        } else if (pnl < 0) {
-            uint256 loss = uint256(-pnl);
-            _poolBalance = _poolBalance > loss ? _poolBalance - loss : 0;
+        if (fee > 0) {
+            if (!usdc.transfer(feeCollector, fee)) revert Errors.TransferFailed();
         }
-        emit PoolProfitSettled(pnl);
+        if (!usdc.transfer(msg.sender, userReceive)) revert Errors.TransferFailed();
+
+        emit Withdrawn(msg.sender, userReceive, burnShares);
+        emit FeeCharged(msg.sender, fee, "withdrawal");
     }
 
-    // ── Views ──
+    // ── Agent: pull USDC from vault to trade on Uniswap V3 ───────────────────
+    function allocate(uint256 amount) external onlyOperator {
+        if (amount == 0) revert Errors.ZeroAmount();
+        if (usdc.balanceOf(address(this)) < amount) revert Errors.InsufficientBalance();
+        _deployedAmount += amount;
+        if (!usdc.transfer(operator, amount)) revert Errors.TransferFailed();
+        emit Allocated(operator, amount);
+    }
+
+    // ── Agent: return USDC after trading ─────────────────────────────────────
+    // 'returned' can be more than deployed (profit) or less (loss).
+    // Positive slippage difference stays in agent wallet — not included here.
+    function settle(uint256 returned) external onlyOperator {
+        uint256 deployed  = _deployedAmount;
+        _deployedAmount   = 0;
+
+        uint256 pnl;
+        bool    profit;
+        if (returned >= deployed) {
+            pnl    = returned - deployed;
+            profit = true;
+        } else {
+            pnl    = deployed - returned;
+            profit = false;
+        }
+
+        if (returned > 0) {
+            if (!usdc.transferFrom(operator, address(this), returned)) revert Errors.TransferFailed();
+        }
+
+        // Update HWM after USDC is actually in vault
+        if (profit) {
+            uint256 newBalance = usdc.balanceOf(address(this));
+            if (newBalance > highWaterMark) highWaterMark = newBalance;
+        }
+
+        emit Settled(operator, returned, pnl, profit);
+    }
+
+    // ── Owner: pull accrued management fee (2% AUM / year) ───────────────────
+    // Call anytime — calculates fee since last collection.
+    function collectManagementFee() external onlyOwner {
+        uint256 elapsed = block.timestamp - lastFeeCollection;
+        if (elapsed == 0) return;
+
+        uint256 aum = poolBalance();
+        // fee = AUM * 2% * (elapsed / 1 year)
+        uint256 fee = (aum * MANAGEMENT_FEE_BPS * elapsed) / (BPS_BASE * SECONDS_PER_YEAR);
+
+        lastFeeCollection = block.timestamp;
+
+        if (fee == 0) return;
+        if (usdc.balanceOf(address(this)) < fee) {
+            fee = usdc.balanceOf(address(this)); // take whatever is liquid
+        }
+
+        if (!usdc.transfer(feeCollector, fee)) revert Errors.TransferFailed();
+        emit FeeCharged(address(0), fee, "management");
+    }
+
+    // ── Owner: pull performance fee from epoch profit ─────────────────────────
+    // amount = 20% of epoch profit (calculated off-chain, pulled on-chain).
+    // Only callable if pool is above high-water mark.
+    function collectPerformanceFee(uint256 amount) external onlyOwner {
+        if (amount == 0) revert Errors.ZeroAmount();
+        if (poolBalance() <= highWaterMark) revert Errors.BelowHighWaterMark();
+        if (usdc.balanceOf(address(this)) < amount) revert Errors.InsufficientBalance();
+        if (!usdc.transfer(feeCollector, amount)) revert Errors.TransferFailed();
+        emit FeeCharged(address(0), amount, "performance");
+    }
+
+    // ── Owner: update fee collector address ───────────────────────────────────
+    function setFeeCollector(address newCollector) external onlyOwner {
+        if (newCollector == address(0)) revert Errors.ZeroAddress();
+        feeCollector = newCollector;
+    }
+
+    // ── Views ─────────────────────────────────────────────────────────────────
     function sharesOf(address user) external view returns (uint256) {
         return _shares[user];
     }
@@ -136,17 +191,23 @@ contract Vault is IVault {
         return _totalShares;
     }
 
-    function poolBalance() external view returns (uint256) {
-        return _poolBalance;
+    function poolBalance() public view returns (uint256) {
+        return usdc.balanceOf(address(this)) + _deployedAmount;
     }
 
-    function poolAvailable() public view returns (uint256) {
-        return _poolBalance > _poolLocked ? _poolBalance - _poolLocked : 0;
+    function deployedAmount() external view returns (uint256) {
+        return _deployedAmount;
     }
 
-    // User's current USDC.e value = share * pool NAV
     function userValue(address user) public view returns (uint256) {
         if (_totalShares == 0) return 0;
-        return (_shares[user] * _poolBalance) / _totalShares;
+        return (_shares[user] * poolBalance()) / _totalShares;
+    }
+
+    // Accrued management fee not yet collected (for dashboard display)
+    function pendingManagementFee() external view returns (uint256) {
+        uint256 elapsed = block.timestamp - lastFeeCollection;
+        uint256 aum     = poolBalance();
+        return (aum * MANAGEMENT_FEE_BPS * elapsed) / (BPS_BASE * SECONDS_PER_YEAR);
     }
 }

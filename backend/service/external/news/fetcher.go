@@ -12,7 +12,9 @@ import (
 )
 
 type Fetcher struct {
-	http *http.Client
+	http          *http.Client
+	macroCache    string
+	macroCachedAt time.Time
 }
 
 func NewFetcher() *Fetcher {
@@ -36,26 +38,42 @@ type coinGeckoGlobalResponse struct {
 	} `json:"data"`
 }
 
-// FetchMacro returns a macro market context string for AI reasoning
+// FetchMacro returns a macro market context string for AI reasoning (cached 10 min to avoid rate limits)
 func (f *Fetcher) FetchMacro() (string, error) {
+	if f.macroCache != "" && time.Since(f.macroCachedAt) < 10*time.Minute {
+		return f.macroCache, nil
+	}
+
 	resp, err := f.http.Get("https://api.coingecko.com/api/v3/global")
 	if err != nil {
 		log.Printf("CoinGecko fetch error: %v", err)
+		if f.macroCache != "" {
+			return f.macroCache, nil
+		}
 		return "Global crypto market data unavailable", nil
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		if f.macroCache != "" {
+			return f.macroCache, nil
+		}
 		return "Global crypto market data unavailable", nil
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		if f.macroCache != "" {
+			return f.macroCache, nil
+		}
 		return "Global crypto market data unavailable", nil
 	}
 
 	var result coinGeckoGlobalResponse
 	if err := json.Unmarshal(body, &result); err != nil {
+		if f.macroCache != "" {
+			return f.macroCache, nil
+		}
 		return "Global crypto market data unavailable", nil
 	}
 
@@ -75,6 +93,8 @@ func (f *Fetcher) FetchMacro() (string, error) {
 		d.MarketCapPercentage["eth"],
 	)
 
+	f.macroCache = context
+	f.macroCachedAt = time.Now()
 	return context, nil
 }
 

@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IAgentRegistry} from "../interfaces/IAgentRegistry.sol";
 import {Errors} from "../libraries/Errors.sol";
 
-/// @notice Anchors 0G Storage root hashes on-chain for verifiability
 contract StorageAnchor {
-    IAgentRegistry public agentRegistry;
+    address public owner;
+    address public agent;
 
     struct Anchor {
         bytes32 storageRoot;
-        string metadata; // e.g. "trade_log_batch_42"
+        string  metadata;
         uint256 timestamp;
         address agent;
     }
@@ -19,13 +18,24 @@ contract StorageAnchor {
 
     event Anchored(uint256 indexed anchorId, bytes32 storageRoot, address indexed agent);
 
-    modifier onlyAgent() {
-        if (!agentRegistry.isAgent(msg.sender)) revert Errors.Unauthorized();
+    modifier onlyOwner() {
+        if (msg.sender != owner) revert Errors.Unauthorized();
         _;
     }
 
-    constructor(address _agentRegistry) {
-        agentRegistry = IAgentRegistry(_agentRegistry);
+    modifier onlyAgent() {
+        if (msg.sender != agent) revert Errors.Unauthorized();
+        _;
+    }
+
+    constructor(address _agent) {
+        owner = msg.sender;
+        agent = _agent;
+    }
+
+    function setAgent(address newAgent) external onlyOwner {
+        if (newAgent == address(0)) revert Errors.ZeroAddress();
+        agent = newAgent;
     }
 
     function anchor(bytes32 storageRoot, string calldata metadata) external onlyAgent {

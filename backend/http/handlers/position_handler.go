@@ -57,3 +57,12 @@ func GetAgentOpenPositions(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"positions": positions})
 }
+
+// ClearPositions deletes all positions from the database (admin/reset only)
+func ClearPositions(c *gin.Context) {
+	if err := positionRepo.DeleteAll(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "all positions deleted"})
+}

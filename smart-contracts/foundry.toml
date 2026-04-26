@@ -8,9 +8,11 @@ optimizer_runs = 200
 evm_version = "cancun"
 
 [rpc_endpoints]
-og_galileo = "${OG_GALILEO_RPC_URL}"
-og_mainnet = "${OG_RPC_URL}"
+og_galileo        = "${OG_GALILEO_RPC_URL}"
+og_mainnet        = "${OG_RPC_URL}"
+arbitrum_sepolia  = "${ARBITRUM_SEPOLIA_RPC_URL}"
 
 [etherscan]
-og_galileo = { key = "PLACEHOLDER", url = "https://chainscan-galileo.0g.ai/open/api" }
-og_mainnet = { key = "PLACEHOLDER", url = "https://chainscan.0g.ai/open/api" }
+og_galileo       = { key = "PLACEHOLDER", url = "https://chainscan-galileo.0g.ai/open/api" }
+og_mainnet       = { key = "PLACEHOLDER", url = "https://chainscan.0g.ai/open/api" }
+arbitrum_sepolia = { key = "${ARBISCAN_API_KEY}", url = "https://api-sepolia.arbiscan.io/api" }

@@ -9,9 +9,11 @@ import (
 	"voyagerfi/service/agent"
 	"voyagerfi/service/chain"
 	"voyagerfi/service/external/deepseek"
+	"voyagerfi/service/external/market"
 	"voyagerfi/service/external/news"
 	"voyagerfi/service/external/pyth"
 	"voyagerfi/service/external/storage"
+	"voyagerfi/service/external/uniswap"
 	"voyagerfi/service/quant"
 	"voyagerfi/service/websocket"
 )
@@ -21,23 +23,22 @@ type Registry struct {
 	DeepSeek  *deepseek.Client
 	Pyth      *pyth.Client
 	News      *news.Fetcher
+	Market    *market.Fetcher
 	Storage   *storage.Client
 	WebSocket *websocket.Hub
 	AgentLoop *agent.Loop
-	Indexer   *chain.Indexer
 }
 
 func NewRegistry(cfg *config.AppConfig, repo *repository.Registry) *Registry {
-	var chainIndexer *chain.Indexer
-
 	quantEngine := quant.NewEngine()
 	deepseekClient := deepseek.NewClient(cfg.DeepSeekURL, cfg.DeepSeekAPIKey)
 	pythClient := pyth.NewClient(cfg.PythContract)
 	newsFetcher := news.NewFetcher()
+	marketFetcher := market.NewFetcher()
 	wsHub := websocket.NewHub()
 	riskManager := agent.NewRiskManager(agent.DefaultRiskConfig())
 
-	// 0G Storage client
+	// 0G Storage
 	storageClient := storage.NewClient(cfg.StorageIndexerURL)
 	if cfg.AgentPrivateKey != "" {
 		storageClient.SetCredentials(cfg.OGRpcURL, cfg.AgentPrivateKey)
@@ -49,64 +50,58 @@ func NewRegistry(cfg *config.AppConfig, repo *repository.Registry) *Registry {
 		deepseekClient,
 		pythClient,
 		newsFetcher,
+		marketFetcher,
 		riskManager,
-		10*time.Second,
+		5*time.Minute,
 	)
 
-	// Wire WebSocket hub + 0G Storage into agent loop
 	agentLoop.SetWSHub(wsHub)
 	agentLoop.SetStorage(storageClient)
 
-	// Initialize on-chain bindings if private key is configured
-	if cfg.AgentPrivateKey != "" {
-		chainClient, err := chain.NewClient(cfg.OGRpcURL, cfg.AgentPrivateKey)
+	// ── Uniswap V3 execution layer (Arbitrum) ────────────────────────────────
+	if cfg.AgentPrivateKey != "" && cfg.VaultAddress != "" && cfg.ArbitrumRPCURL != "" {
+		uniClient, err := uniswap.NewClient(
+			cfg.ArbitrumRPCURL,
+			cfg.AgentPrivateKey,
+			cfg.VaultAddress,
+			cfg.ArbitrumMainnet,
+			uniswap.TokenOverrides{
+				WBTC: cfg.WBTCAddress,
+				ARB:  cfg.ARBTokenAddress,
+			},
+		)
 		if err != nil {
-			log.Printf("WARNING: chain client init failed: %v — running in simulation mode", err)
+			log.Printf("WARNING: Uniswap client init failed: %v — agent will simulate trades", err)
 		} else {
-			vaultBinding := chain.NewVaultBinding(chainClient, cfg.VaultAddress)
-
-			perpetualBinding, perpErr := chain.NewPerpetualBinding(chainClient, cfg.PerpetualAddress)
-			if perpErr != nil {
-				log.Printf("WARNING: perpetual ABI parse failed: %v", perpErr)
+			agentLoop.SetUniswap(uniClient)
+			net := "Arbitrum Sepolia"
+			if cfg.ArbitrumMainnet {
+				net = "Arbitrum One"
 			}
-
-			var priceFeedBinding *chain.PriceFeedBinding
-			if cfg.PriceFeedAddress != "" {
-				priceFeedBinding, _ = chain.NewPriceFeedBinding(chainClient, cfg.PriceFeedAddress)
-			}
-
-			var decisionLogBinding *chain.DecisionLogBinding
-			if cfg.DecisionLogAddress != "" {
-				decisionLogBinding = chain.NewDecisionLogBinding(chainClient, cfg.DecisionLogAddress)
-			}
-
-			var storageAnchorBinding *chain.StorageAnchorBinding
-			if cfg.StorageAnchorAddress != "" {
-				storageAnchorBinding = chain.NewStorageAnchorBinding(chainClient, cfg.StorageAnchorAddress)
-			}
-
-			if perpetualBinding != nil {
-				agentLoop.SetChainBindings(
-					chainClient, vaultBinding, perpetualBinding,
-					priceFeedBinding, decisionLogBinding, storageAnchorBinding,
-				)
-				log.Printf("Chain bindings initialized (vault=%s perpetual=%s pricefeed=%s storage_anchor=%s)",
-					cfg.VaultAddress, cfg.PerpetualAddress, cfg.PriceFeedAddress, cfg.StorageAnchorAddress)
-			}
-
-			if cfg.PerpetualAddress != "" && cfg.VaultAddress != "" {
-				indexer, indexerErr := chain.NewIndexer(chainClient, cfg.PerpetualAddress, cfg.VaultAddress, repo)
-				if indexerErr != nil {
-					log.Printf("WARNING: indexer init failed: %v", indexerErr)
-				} else {
-					go indexer.Start()
-					chainIndexer = indexer
-					log.Println("Chain indexer started")
-				}
-			}
+			log.Printf("Uniswap V3 client initialized (%s, agent=%s)", net, uniClient.Address())
 		}
 	} else {
-		log.Printf("AGENT_PRIVATE_KEY not set — running agent in simulation mode")
+		log.Printf("Uniswap not initialized — AGENT_PRIVATE_KEY/VAULT_ADDRESS/ARBITRUM_RPC_URL missing, running in simulation mode")
+	}
+
+	// ── 0G Chain verifiability layer ─────────────────────────────────────────
+	if cfg.AgentPrivateKey != "" && cfg.DecisionLogAddress != "" {
+		chainClient, err := chain.NewClient(cfg.OGRpcURL, cfg.AgentPrivateKey)
+		if err != nil {
+			log.Printf("WARNING: 0G Chain client init failed: %v", err)
+		} else {
+			var decisionLog *chain.DecisionLogBinding
+			if cfg.DecisionLogAddress != "" {
+				decisionLog = chain.NewDecisionLogBinding(chainClient, cfg.DecisionLogAddress)
+			}
+			var storageAnchor *chain.StorageAnchorBinding
+			if cfg.StorageAnchorAddress != "" {
+				storageAnchor = chain.NewStorageAnchorBinding(chainClient, cfg.StorageAnchorAddress)
+			}
+			agentLoop.SetChainBindings(chainClient, decisionLog, storageAnchor)
+			log.Printf("0G Chain bindings initialized (decisionLog=%s storageAnchor=%s)",
+				cfg.DecisionLogAddress, cfg.StorageAnchorAddress)
+		}
 	}
 
 	return &Registry{
@@ -114,9 +109,9 @@ func NewRegistry(cfg *config.AppConfig, repo *repository.Registry) *Registry {
 		DeepSeek:  deepseekClient,
 		Pyth:      pythClient,
 		News:      newsFetcher,
+		Market:    marketFetcher,
 		Storage:   storageClient,
 		WebSocket: wsHub,
 		AgentLoop: agentLoop,
-		Indexer:   chainIndexer,
 	}
 }

@@ -32,7 +32,7 @@ export function LandingUI() {
               traded automatically.
             </h1>
             <p className="text-base text-muted-foreground leading-relaxed max-w-sm mx-auto">
-              Deposit USDC.e. The AI monitors the market 24/7 and trades on your behalf. Every decision is recorded on-chain — nothing is hidden.
+              Deposit USDC. The AI monitors the market 24/7 and trades on your behalf. Every decision is recorded on-chain — nothing is hidden.
             </p>
           </div>
 
@@ -60,7 +60,7 @@ export function LandingUI() {
         <div className="mt-20 border border-border rounded-xl bg-card overflow-hidden">
           <div className="grid grid-cols-3 divide-x divide-border">
             {[
-              { value: "0G Chain",  label: "Settlement layer" },
+              { value: "0G + Arbitrum", label: "Settlement layer" },
               { value: "TEE",       label: "Verified AI inference" },
               { value: "24 / 7",    label: "Always running" },
             ].map((s) => (

@@ -47,6 +47,7 @@ func Setup(repo *repository.Registry, svc *service.Registry) *gin.Engine {
 	auth.Use(middleware.WalletAuth())
 	{
 		auth.GET("/vault/history", handlers.GetVaultHistory)
+		auth.POST("/vault/events", handlers.RecordVaultEvent)
 		auth.GET("/positions", handlers.GetPositions)
 		auth.GET("/positions/open", handlers.GetOpenPositions)
 	}

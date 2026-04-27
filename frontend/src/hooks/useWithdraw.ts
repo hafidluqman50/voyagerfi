@@ -1,8 +1,9 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { estimateFeesPerGas, waitForTransactionReceipt } from "@wagmi/core";
 import { parseUnits } from "viem";
-import { useConfig, useWriteContract } from "wagmi";
+import { useAccount, useConfig, useWriteContract } from "wagmi";
 import { VAULT_ADDRESS, VAULT_ABI } from "@/lib/contracts";
+import { api } from "@/lib/api";
 
 const USDC_DECIMALS = 6;
 
@@ -15,11 +16,15 @@ async function freshGas(config: ReturnType<typeof useConfig>) {
 }
 
 export function useWithdraw() {
+  const { address } = useAccount();
   const config = useConfig();
   const { writeContractAsync } = useWriteContract();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (amount: string) => {
+      if (!address) throw new Error("Wallet not connected");
+
       const amountWei = parseUnits(amount, USDC_DECIMALS);
 
       const withdrawTx = await writeContractAsync({
@@ -30,6 +35,13 @@ export function useWithdraw() {
         ...(await freshGas(config)),
       });
       await waitForTransactionReceipt(config, { hash: withdrawTx });
+
+      api.recordVaultEvent(address, {
+        event_type: "withdraw",
+        amount: amountWei.toString(),
+        tx_hash: withdrawTx,
+      }).then(() => queryClient.invalidateQueries({ queryKey: ["vault-pnl", address] }))
+        .catch(() => {});
     },
   });
 }

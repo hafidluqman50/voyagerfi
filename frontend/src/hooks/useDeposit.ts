@@ -1,8 +1,9 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { estimateFeesPerGas, readContract, waitForTransactionReceipt } from "@wagmi/core";
 import { parseUnits } from "viem";
 import { useAccount, useConfig, useWriteContract } from "wagmi";
 import { USDC_ADDRESS, USDC_ABI, VAULT_ADDRESS, VAULT_ABI } from "@/lib/contracts";
+import { api } from "@/lib/api";
 
 const USDC_DECIMALS = 6;
 
@@ -18,6 +19,7 @@ export function useDeposit() {
   const { address } = useAccount();
   const config = useConfig();
   const { writeContractAsync } = useWriteContract();
+  const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (amount: string) => {
@@ -51,6 +53,13 @@ export function useDeposit() {
         ...(await freshGas(config)),
       });
       await waitForTransactionReceipt(config, { hash: depositTx });
+
+      api.recordVaultEvent(address, {
+        event_type: "deposit",
+        amount: amountWei.toString(),
+        tx_hash: depositTx,
+      }).then(() => queryClient.invalidateQueries({ queryKey: ["vault-pnl", address] }))
+        .catch(() => {});
     },
   });
 }

@@ -151,7 +151,7 @@ export function DashboardUI() {
       <div className="flex flex-col gap-0 -mt-1">
 
         {/* ── Vault stats ── */}
-        <div className="grid grid-cols-2 md:grid-cols-5 border border-border rounded-2xl overflow-hidden bg-card mb-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 border border-border rounded-2xl overflow-hidden bg-card mb-4">
           <StatItem
             label="Pool AUM"
             value={formatUsdcAmount(vault.poolBalance)}
@@ -163,17 +163,6 @@ export function DashboardUI() {
             label="Your Value"
             value={address ? formatUsdcAmount(vault.userValue) : "—"}
             sub={vault.userSharePct != null ? `${vault.userSharePct.toFixed(2)}% of pool` : undefined}
-          />
-          <StatItem
-            label="High-Water Mark"
-            value={formatUsdcAmount(vault.highWaterMark)}
-            sub="pool peak NAV"
-          />
-          <StatItem
-            label="Mgmt Fee Accrued"
-            value={formatUsdcAmount(vault.pendingMgmtFee)}
-            sub="2% AUM / yr"
-            positive={vault.pendingMgmtFee != null && parseFloat(vault.pendingMgmtFee) > 0}
           />
           <div className="flex flex-col gap-2 px-5 py-4 justify-center">
             <Link href="/trade" className="mt-1 inline-block rounded-lg bg-primary px-4 py-2 text-xs font-semibold text-primary-foreground hover:bg-primary/90 transition-colors text-center">

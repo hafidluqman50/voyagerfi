@@ -72,6 +72,19 @@ export interface NewsData {
   news: NewsArticle[];
 }
 
+export interface VaultEvent {
+  id: number;
+  user: string;
+  event_type: "deposit" | "withdraw";
+  amount: string; // raw USDC (6 decimals), e.g. "2000000" = 2 USDC
+  tx_hash: string;
+  created_at: string;
+}
+
+export interface VaultHistoryData {
+  events: VaultEvent[];
+}
+
 export type AgentWsTick = {
   type: "tick";
   price: number;

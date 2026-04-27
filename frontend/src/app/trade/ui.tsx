@@ -10,6 +10,7 @@ import { useAccount, useWaitForTransactionReceipt, useWriteContract, useReadCont
 import { parseUnits } from "viem";
 import { useDeposit } from "@/hooks/useDeposit";
 import { useWithdraw } from "@/hooks/useWithdraw";
+import { useVaultPnl } from "@/hooks/useVaultPnl";
 import { AppLayout } from "@/components/layout/app-layout";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -206,19 +207,37 @@ function DepositDialog() {
 }
 
 /* ── Withdraw Dialog ── */
-function WithdrawDialog({ available, totalValue }: { available: string | null; totalValue: string | null }) {
+interface WithdrawDialogProps {
+  available: string | null;
+  totalValue: string | null;
+  userInPool: number | null;
+  userInTrades: number | null;
+  netDeposited: number | null;
+  pnl: number | null;
+}
+
+function WithdrawDialog({ available, totalValue, userInPool, userInTrades, netDeposited, pnl }: WithdrawDialogProps) {
   const [amt, setAmt] = useState("");
   const [open, setOpen] = useState(false);
-  const maxUsdc = available ?? "0";
+
+  const maxWithdrawable = Math.min(
+    parseFloat(totalValue ?? "0"),
+    parseFloat(available ?? "0"),
+  );
+  const maxUsdc = maxWithdrawable.toFixed(6);
+
   const amtNum = parseFloat(amt) || 0;
-  const valid = !!amt && amtNum > 0 && amtNum <= parseFloat(maxUsdc);
+  const valid = !!amt && amtNum > 0 && amtNum <= maxWithdrawable;
   const exitFee = valid ? amtNum * 0.001 : 0;
   const youReceive = valid ? amtNum - exitFee : 0;
-  const deployedLocked = totalValue != null && available != null
-    && parseFloat(totalValue) > parseFloat(available)
-    && parseFloat(totalValue) > 0;
+  const hasDeployed = userInTrades != null && userInTrades > 0.000001;
 
   const { mutate: withdraw, isPending, isSuccess, error, reset } = useWithdraw();
+
+  const fmtPnl = (v: number) => {
+    const sign = v >= 0 ? "+" : "";
+    return `${sign}${v.toFixed(4)} USDC`;
+  };
 
   return (
     <Dialog open={open} onOpenChange={v => { setOpen(v); if (!v) { setAmt(""); reset(); } }}>
@@ -226,22 +245,67 @@ function WithdrawDialog({ available, totalValue }: { available: string | null; t
       <DialogContent className="sm:max-w-sm">
         <DialogHeader><DialogTitle>Withdraw USDC</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-4 py-1">
-          <div className="bg-secondary/50 rounded-xl px-4 py-3 flex justify-between items-center">
-            <span className="text-xs text-muted-foreground">Your vault value</span>
-            <span className="text-sm font-mono font-semibold">{fmtUsdc(totalValue)}</span>
+
+          {/* Vault breakdown */}
+          <div className="bg-secondary/50 rounded-xl px-4 py-3 flex flex-col gap-2 text-xs">
+            <div className="flex justify-between items-center">
+              <span className="text-muted-foreground">Your vault value</span>
+              <span className="font-mono font-semibold text-sm">{fmtUsdc(totalValue)}</span>
+            </div>
+            <div className="border-t border-border pt-2 flex flex-col gap-1.5">
+              <div className="flex justify-between items-center">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="w-1.5 h-1.5 rounded-full bg-positive inline-block" />
+                  In Pool (liquid)
+                </span>
+                <span className="font-mono text-positive">
+                  {userInPool != null ? `${userInPool.toFixed(2)} USDC` : "—"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                  In Active Trades
+                </span>
+                <span className="font-mono text-amber-500">
+                  {userInTrades != null ? `${userInTrades.toFixed(2)} USDC` : "—"}
+                </span>
+              </div>
+            </div>
+            {netDeposited != null && (
+              <div className="border-t border-border pt-2 flex flex-col gap-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Net Deposited</span>
+                  <span className="font-mono">{netDeposited.toFixed(4)} USDC</span>
+                </div>
+                {pnl != null && (
+                  <div className="flex justify-between items-center font-semibold">
+                    <span className="text-muted-foreground">Profit / Loss</span>
+                    <span className={cn("font-mono", pnl >= 0 ? "text-positive" : "text-negative")}>
+                      {fmtPnl(pnl)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          {deployedLocked && (
+
+          {hasDeployed && (
             <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-2.5 text-xs text-amber-500">
               Part of your funds are in active trades. Only liquid portion is withdrawable now.
             </div>
           )}
+
           <div>
             <div className="flex justify-between items-center mb-1.5">
               <label className="text-xs text-muted-foreground">Amount (USDC)</label>
-              <button onClick={() => setAmt(maxUsdc)} className="text-xs text-primary font-medium">Max · {fmtUsdc(available)}</button>
+              <button onClick={() => setAmt(maxUsdc)} className="text-xs text-primary font-medium">
+                Max · {maxWithdrawable.toFixed(2)} USDC
+              </button>
             </div>
             <Input value={amt} onChange={e => setAmt(e.target.value)} placeholder="0.00" className="font-mono h-11" type="number" min="0" max={maxUsdc} />
           </div>
+
           {valid && (
             <div className="bg-secondary/50 rounded-xl px-4 py-3 flex flex-col gap-1.5 text-xs">
               <div className="flex justify-between text-muted-foreground">
@@ -254,6 +318,7 @@ function WithdrawDialog({ available, totalValue }: { available: string | null; t
               </div>
             </div>
           )}
+
           {error && <p className="text-xs text-negative text-center">{(error as Error).message}</p>}
           {isSuccess ? (
             <div className="bg-positive/10 text-positive rounded-xl px-4 py-3 text-sm font-medium text-center">Withdrawal confirmed ✓</div>
@@ -272,7 +337,19 @@ function WithdrawDialog({ available, totalValue }: { available: string | null; t
 /* ── My Portfolio card ── */
 function PortfolioCard() {
   const { address } = useAccount();
-  const { userValue: total, liquidBalance: available, isLoading } = useVaultBalance(address);
+  const { userValue: total, liquidBalance: available, poolBalance, deployedAmount, isLoading } = useVaultBalance(address);
+  const { data: netDeposited } = useVaultPnl(address);
+
+  const poolBal = parseFloat(poolBalance ?? "0");
+  const userInPool = poolBal > 0 && total != null
+    ? parseFloat(total) * parseFloat(available ?? "0") / poolBal
+    : null;
+  const userInTrades = userInPool != null && total != null
+    ? parseFloat(total) - userInPool
+    : null;
+  const pnl = netDeposited != null && total != null
+    ? parseFloat(total) - netDeposited
+    : null;
 
   return (
     <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
@@ -287,7 +364,14 @@ function PortfolioCard() {
         </div>
         {address ? (
           <div className="flex items-center gap-2">
-            <WithdrawDialog available={available} totalValue={total} />
+            <WithdrawDialog
+              available={available}
+              totalValue={total}
+              userInPool={userInPool}
+              userInTrades={userInTrades}
+              netDeposited={netDeposited ?? null}
+              pnl={pnl}
+            />
             <DepositDialog />
           </div>
         ) : (

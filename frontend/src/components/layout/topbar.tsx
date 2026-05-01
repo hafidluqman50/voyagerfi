@@ -22,7 +22,7 @@ export function Topbar() {
       <div className="md:hidden">
         <ConnectButton
           showBalance={false}
-          chainStatus="none"
+          chainStatus="icon"
           accountStatus="avatar"
           label="Connect"
         />
